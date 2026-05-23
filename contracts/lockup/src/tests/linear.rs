@@ -144,3 +144,40 @@ fn streamed_amount_progresses_with_time() {
     assert_eq!(f.lockup.streamed_amount(&id), 1_000_000);
     assert_eq!(f.lockup.status(&id), StreamStatus::Settled);
 }
+
+#[test]
+fn nft_name_and_symbol_set() {
+    let f = setup();
+    use soroban_sdk::String;
+    // The NonFungibleToken trait methods are exposed as contract entrypoints
+    // (verified by their inclusion in the wasm export list). Invoke them via
+    // the generated client.
+    assert_eq!(f.lockup.name(), String::from_str(&f.env, "Hourglass Stream"));
+    assert_eq!(f.lockup.symbol(), String::from_str(&f.env, "STREAM"));
+}
+
+#[test]
+fn nft_minted_on_create_linear() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_linear(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000_000i128,
+        &(now + 100),
+        &(now + 200),
+        &(now + 1_100),
+        &0i128,
+        &0i128,
+        &true,
+        &true,
+    );
+    // NFT receipt should belong to the recipient and be counted in the
+    // enumerable extension.
+    assert_eq!(f.lockup.owner_of(&id), f.recipient);
+    assert_eq!(f.lockup.balance(&f.recipient), 1);
+    assert_eq!(f.lockup.total_supply(), 1);
+    assert_eq!(f.lockup.get_token_id(&0), id);
+    assert_eq!(f.lockup.get_owner_token_id(&f.recipient, &0), id);
+}

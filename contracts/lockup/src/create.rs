@@ -1,4 +1,4 @@
-use crate::{events, next_id, save_stream, Lockup, LockupArgs, LockupClient};
+use crate::{events, next_id, nft, save_stream, Lockup, LockupArgs, LockupClient};
 use hourglass_shared::{Error, LinearShape, Stream, StreamShape, Tranche, TranchedShape, MAX_TRANCHES};
 use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env, Vec};
 
@@ -69,8 +69,8 @@ impl Lockup {
         };
         let id = next_id(&env);
         save_stream(&env, id, &stream);
+        nft::mint(&env, &recipient, id);
         events::stream_created(&env, id, &stream);
-        // NFT mint will be added in Task 25.
         id
     }
 }
@@ -136,6 +136,7 @@ impl Lockup {
         };
         let id = next_id(&env);
         save_stream(&env, id, &stream);
+        nft::mint(&env, &recipient, id);
         events::stream_created(&env, id, &stream);
         id
     }

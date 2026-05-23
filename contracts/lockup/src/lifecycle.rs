@@ -1,4 +1,4 @@
-use crate::{events, load_stream, save_stream, DataKey, Lockup, LockupArgs, LockupClient};
+use crate::{events, load_stream, nft, save_stream, DataKey, Lockup, LockupArgs, LockupClient};
 use hourglass_shared::{Error, OpKind};
 use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env};
 
@@ -135,8 +135,8 @@ impl Lockup {
             panic_with_error!(&env, Error::InvalidStatus);
         }
         env.storage().persistent().remove(&DataKey::Stream(stream_id));
+        nft::burn(&env, stream_id);
         events::burned(&env, stream_id);
-        // NFT burn added in Task 27.
     }
 }
 
