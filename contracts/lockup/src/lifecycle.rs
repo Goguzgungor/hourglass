@@ -140,6 +140,27 @@ impl Lockup {
     }
 }
 
+#[contractimpl]
+impl Lockup {
+    pub fn withdraw_max_and_transfer(env: Env, stream_id: u32, new_owner: Address) {
+        let s = load_stream(&env, stream_id);
+        if !s.is_transferable {
+            panic_with_error!(&env, Error::NotTransferable);
+        }
+        s.recipient.require_auth();
+        let withdrawable = s.withdrawable(env.ledger().timestamp());
+        if withdrawable > 0 {
+            Self::withdraw(env.clone(), stream_id, s.recipient.clone(), withdrawable);
+        }
+        crate::nft::base_transfer(&env, &s.recipient, &new_owner, stream_id);
+        // After the NFT transfer, sync the stream.recipient (base_transfer skips the hook).
+        let mut s2 = load_stream(&env, stream_id);
+        s2.recipient = new_owner.clone();
+        save_stream(&env, stream_id, &s2);
+        events::transferred(&env, stream_id, &s.recipient, &new_owner);
+    }
+}
+
 fn native_token(env: &Env) -> token::Client {
     let native: Address = env
         .storage()
