@@ -81,3 +81,97 @@ mod tests {
         ));
     }
 }
+
+use crate::types::Stream;
+
+/// Compute the cumulative streamed amount of a Linear stream at time `now`.
+///
+/// Semantics (matches spec section 7):
+///   - before start_ts          → 0
+///   - in [start_ts, cliff_ts)  → unlock_at_start
+///   - at  [cliff_ts, end_ts)   → unlock_at_start + unlock_at_cliff + linear_interpolation(remaining)
+///   - at or after end_ts       → deposited
+pub fn streamed_amount_linear(
+    deposited: i128,
+    start_ts: u64,
+    cliff_ts: u64,
+    end_ts: u64,
+    unlock_at_start: i128,
+    unlock_at_cliff: i128,
+    now: u64,
+) -> Result<i128, Error> {
+    if now < start_ts {
+        return Ok(0);
+    }
+    if now < cliff_ts {
+        return Ok(unlock_at_start);
+    }
+    if now >= end_ts {
+        return Ok(deposited);
+    }
+    let base = sub(sub(deposited, unlock_at_start)?, unlock_at_cliff)?;
+    let elapsed = (now - cliff_ts) as i128;
+    let span = (end_ts - cliff_ts) as i128;
+    let portion = mul_div(base, elapsed, span)?;
+    add(add(unlock_at_start, unlock_at_cliff)?, portion)
+}
+
+#[cfg(test)]
+mod linear_tests {
+    use super::*;
+
+    const D: i128 = 1_000_000;
+    const S: u64 = 1_000;
+    const C: u64 = 2_000;
+    const E: u64 = 4_000;
+
+    #[test]
+    fn zero_before_start() {
+        assert_eq!(streamed_amount_linear(D, S, C, E, 0, 0, 500).unwrap(), 0);
+    }
+
+    #[test]
+    fn unlock_at_start_only_before_cliff() {
+        assert_eq!(streamed_amount_linear(D, S, C, E, 100_000, 0, 1_500).unwrap(), 100_000);
+    }
+
+    #[test]
+    fn cliff_lump_applies_at_cliff() {
+        // 100k at start + 50k at cliff; at exactly cliff_ts, base = 850k, elapsed = 0
+        assert_eq!(streamed_amount_linear(D, S, C, E, 100_000, 50_000, 2_000).unwrap(), 150_000);
+    }
+
+    #[test]
+    fn linear_interpolation_midway() {
+        // halfway between cliff (2000) and end (4000) → 3000.
+        // base = 1M; elapsed=1000, span=2000 → 500k; total = 500k.
+        assert_eq!(streamed_amount_linear(D, S, C, E, 0, 0, 3_000).unwrap(), 500_000);
+    }
+
+    #[test]
+    fn full_at_end_ts() {
+        assert_eq!(streamed_amount_linear(D, S, C, E, 0, 0, 4_000).unwrap(), D);
+    }
+
+    #[test]
+    fn full_after_end_ts() {
+        assert_eq!(streamed_amount_linear(D, S, C, E, 100_000, 50_000, 99_999).unwrap(), D);
+    }
+
+    #[test]
+    fn no_cliff_equals_no_cliff_lump() {
+        // cliff_ts == start_ts means we go straight to linear interpolation after start.
+        // At t=2000 (halfway between 1000 and 3000), base=1M, elapsed=1000, span=2000 → 500k.
+        assert_eq!(streamed_amount_linear(D, S, S, 3_000, 0, 0, 2_000).unwrap(), 500_000);
+    }
+
+    #[test]
+    fn monotonic_non_decreasing() {
+        let mut prev = 0i128;
+        for t in (0..5_000u64).step_by(37) {
+            let cur = streamed_amount_linear(D, S, C, E, 10_000, 20_000, t).unwrap();
+            assert!(cur >= prev, "decreased at t={}: prev={}, cur={}", t, prev, cur);
+            prev = cur;
+        }
+    }
+}
