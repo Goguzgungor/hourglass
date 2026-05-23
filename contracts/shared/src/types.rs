@@ -85,6 +85,10 @@ impl Stream {
         }
         StreamStatus::Streaming
     }
+
+    pub fn withdrawable(&self, now: u64) -> i128 {
+        crate::math::withdrawable_amount(self, now).unwrap_or(0)
+    }
 }
 
 #[cfg(test)]

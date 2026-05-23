@@ -1,4 +1,6 @@
 use crate::errors::Error;
+use crate::types::{Stream, StreamShape, Tranche};
+use soroban_sdk::Vec as SorobanVec;
 
 /// Checked i128 addition; returns Error::Overflow on overflow.
 pub fn add(a: i128, b: i128) -> Result<i128, Error> {
@@ -81,8 +83,6 @@ mod tests {
         ));
     }
 }
-
-use crate::types::Stream;
 
 /// Compute the cumulative streamed amount of a Linear stream at time `now`.
 ///
@@ -176,9 +176,6 @@ mod linear_tests {
     }
 }
 
-use crate::types::Tranche;
-use soroban_sdk::Vec as SorobanVec;
-
 /// Cumulative streamed amount for a Tranched stream: sum of all tranche amounts
 /// whose timestamp has passed (ts <= now).
 ///
@@ -243,5 +240,73 @@ mod tranched_tests {
         let env = Env::default();
         let t = tranches(&env, &[]);
         assert_eq!(streamed_amount_tranched(&t, 99_999).unwrap(), 0);
+    }
+}
+
+/// Dispatcher: pulls the right shape branch and computes streamed amount.
+pub fn streamed_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
+    match &stream.shape {
+        StreamShape::Linear(l) => streamed_amount_linear(
+            stream.deposited,
+            stream.start_ts,
+            l.cliff_ts,
+            stream.end_ts,
+            l.unlock_at_start,
+            l.unlock_at_cliff,
+            now,
+        ),
+        StreamShape::Tranched(t) => streamed_amount_tranched(&t.tranches, now),
+    }
+}
+
+/// `withdrawable = streamed_amount(now) - withdrawn`. Saturates at 0 just in case
+/// (should never go negative; defense in depth).
+pub fn withdrawable_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
+    let streamed = streamed_amount(stream, now)?;
+    Ok(sub(streamed, stream.withdrawn).unwrap_or(0).max(0))
+}
+
+#[cfg(test)]
+mod dispatcher_tests {
+    use super::*;
+    use crate::types::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    fn linear_stream(env: &Env) -> Stream {
+        let a = Address::generate(env);
+        Stream {
+            sender: a.clone(),
+            recipient: a.clone(),
+            token: a.clone(),
+            start_ts: 1_000,
+            end_ts: 4_000,
+            is_cancelable: true,
+            is_transferable: true,
+            was_canceled: false,
+            is_depleted: false,
+            deposited: 1_000_000,
+            withdrawn: 0,
+            refunded: 0,
+            shape: StreamShape::Linear(LinearShape {
+                cliff_ts: 2_000,
+                unlock_at_start: 0,
+                unlock_at_cliff: 0,
+            }),
+        }
+    }
+
+    #[test]
+    fn linear_dispatch() {
+        let env = Env::default();
+        let s = linear_stream(&env);
+        assert_eq!(streamed_amount(&s, 3_000).unwrap(), 500_000);
+    }
+
+    #[test]
+    fn withdrawable_subtracts_withdrawn() {
+        let env = Env::default();
+        let mut s = linear_stream(&env);
+        s.withdrawn = 200_000;
+        assert_eq!(withdrawable_amount(&s, 3_000).unwrap(), 300_000);
     }
 }
