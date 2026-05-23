@@ -148,4 +148,15 @@ impl Comptroller {
     }
 }
 
+use soroban_sdk::BytesN;
+
+#[contractimpl]
+impl Comptroller {
+    /// Upgrade the running wasm. Admin-gated.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        require_admin(&env);
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+}
+
 mod tests;

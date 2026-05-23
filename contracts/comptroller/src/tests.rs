@@ -125,3 +125,14 @@ fn fee_for_panics_when_oracle_stale() {
     oracle_mock::set(&env, &oracle, 1_000_000_000_000_000i128, 100); // very stale
     client.fee_for(&OpKind::Withdraw);
 }
+
+use soroban_sdk::BytesN;
+
+#[test]
+#[should_panic]
+fn upgrade_requires_admin() {
+    let (env, id, _a, _fc, _o) = setup();
+    let client = ComptrollerClient::new(&env, &id);
+    let zero_hash: BytesN<32> = BytesN::from_array(&env, &[0u8; 32]);
+    client.upgrade(&zero_hash);
+}
