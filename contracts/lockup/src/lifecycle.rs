@@ -127,6 +127,19 @@ impl Lockup {
     }
 }
 
+#[contractimpl]
+impl Lockup {
+    pub fn burn(env: Env, stream_id: u32) {
+        let s = load_stream(&env, stream_id);
+        if !s.is_depleted {
+            panic_with_error!(&env, Error::InvalidStatus);
+        }
+        env.storage().persistent().remove(&DataKey::Stream(stream_id));
+        events::burned(&env, stream_id);
+        // NFT burn added in Task 27.
+    }
+}
+
 fn native_token(env: &Env) -> token::Client {
     let native: Address = env
         .storage()
