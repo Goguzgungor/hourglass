@@ -96,4 +96,56 @@ impl Comptroller {
     }
 }
 
+use crate::oracle::{PriceOracle, PriceSnapshot};
+#[cfg(test)]
+use crate::oracle::mock::MockOracle;
+
+#[contractimpl]
+impl Comptroller {
+    /// Returns the XLM-stroops a caller must pay to perform `op`, given the
+    /// current oracle quote. Reverts if oracle is stale or invalid.
+    pub fn fee_for(env: Env, op: hourglass_shared::OpKind) -> i128 {
+        let micros: i128 = Self::get_fee_usd_micros(env.clone(), op);
+        if micros == 0 {
+            return 0;
+        }
+        let oracle_addr: Address = env.storage().instance().get(&DataKey::Oracle).unwrap();
+        let max_stale: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::OracleMaxStaleness)
+            .unwrap();
+
+        // PHASE 0: tests use the mock oracle; non-test default builds fail loudly
+        // (no real oracle wired in Phase 0). Phase 1 swaps this dispatch for the
+        // feature-gated Reflector adapter selection.
+        #[cfg(test)]
+        let snap: PriceSnapshot = MockOracle::last_xlm_per_usd(&env, &oracle_addr).unwrap();
+        #[cfg(not(test))]
+        let snap: PriceSnapshot = {
+            #[cfg(feature = "reflector")]
+            {
+                crate::oracle::reflector::ReflectorOracle::last_xlm_per_usd(&env, &oracle_addr)
+                    .unwrap()
+            }
+            #[cfg(not(feature = "reflector"))]
+            {
+                panic_with_error!(&env, Error::OracleStale)
+            }
+        };
+
+        let now = env.ledger().timestamp();
+        if now.saturating_sub(snap.ts_secs) > max_stale as u64 {
+            panic_with_error!(&env, Error::OracleStale);
+        }
+        // micros is i128 USD * 1e6
+        // snap.price_x14 is i128 XLM * 1e14 per USD
+        // 1 XLM = 10_000_000 stroops
+        // stroops = micros * price_x14 * 10_000_000 / (1e6 * 1e14)
+        //        = micros * price_x14 / 1e13
+        let num = micros.checked_mul(snap.price_x14).unwrap_or(i128::MAX);
+        num / 10_000_000_000_000i128
+    }
+}
+
 mod tests;
