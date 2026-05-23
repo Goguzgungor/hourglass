@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "contracts/shared",
-    # "contracts/comptroller",
+    "contracts/comptroller",
     # "contracts/lockup",
 ]
 
