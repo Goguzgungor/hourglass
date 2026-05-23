@@ -63,3 +63,91 @@ pub struct Stream {
     pub refunded: i128,
     pub shape: StreamShape,
 }
+
+/// Maximum number of tranches in a Tranched stream. Bounded to keep
+/// storage entry size + tx resource fee predictable.
+pub const MAX_TRANCHES: u32 = 100;
+
+impl Stream {
+    /// Pure status derivation from current timestamp. Does not read storage.
+    pub fn status(&self, now: u64) -> StreamStatus {
+        if self.is_depleted {
+            return StreamStatus::Depleted;
+        }
+        if self.was_canceled {
+            return StreamStatus::Canceled;
+        }
+        if now < self.start_ts {
+            return StreamStatus::Pending;
+        }
+        if now >= self.end_ts {
+            return StreamStatus::Settled;
+        }
+        StreamStatus::Streaming
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    fn stream(env: &Env) -> Stream {
+        let addr = Address::generate(env);
+        Stream {
+            sender: addr.clone(),
+            recipient: addr.clone(),
+            token: addr.clone(),
+            start_ts: 100,
+            end_ts: 200,
+            is_cancelable: true,
+            is_transferable: true,
+            was_canceled: false,
+            is_depleted: false,
+            deposited: 1000,
+            withdrawn: 0,
+            refunded: 0,
+            shape: StreamShape::Linear(LinearShape {
+                cliff_ts: 100,
+                unlock_at_start: 0,
+                unlock_at_cliff: 0,
+            }),
+        }
+    }
+
+    #[test]
+    fn status_pending_before_start() {
+        let env = Env::default();
+        assert_eq!(stream(&env).status(50), StreamStatus::Pending);
+    }
+
+    #[test]
+    fn status_streaming_during_window() {
+        let env = Env::default();
+        assert_eq!(stream(&env).status(150), StreamStatus::Streaming);
+    }
+
+    #[test]
+    fn status_settled_at_or_after_end() {
+        let env = Env::default();
+        assert_eq!(stream(&env).status(200), StreamStatus::Settled);
+        assert_eq!(stream(&env).status(99999), StreamStatus::Settled);
+    }
+
+    #[test]
+    fn status_canceled_takes_precedence_over_time() {
+        let env = Env::default();
+        let mut s = stream(&env);
+        s.was_canceled = true;
+        assert_eq!(s.status(150), StreamStatus::Canceled);
+    }
+
+    #[test]
+    fn status_depleted_takes_precedence_over_canceled() {
+        let env = Env::default();
+        let mut s = stream(&env);
+        s.was_canceled = true;
+        s.is_depleted = true;
+        assert_eq!(s.status(50), StreamStatus::Depleted);
+    }
+}
