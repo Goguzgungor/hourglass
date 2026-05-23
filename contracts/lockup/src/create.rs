@@ -1,6 +1,6 @@
 use crate::{events, next_id, save_stream, Lockup, LockupArgs, LockupClient};
-use hourglass_shared::{Error, LinearShape, Stream, StreamShape};
-use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env};
+use hourglass_shared::{Error, LinearShape, Stream, StreamShape, Tranche, TranchedShape, MAX_TRANCHES};
+use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env, Vec};
 
 #[contractimpl]
 impl Lockup {
@@ -71,6 +71,72 @@ impl Lockup {
         save_stream(&env, id, &stream);
         events::stream_created(&env, id, &stream);
         // NFT mint will be added in Task 25.
+        id
+    }
+}
+
+#[contractimpl]
+impl Lockup {
+    pub fn create_tranched(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        tranches: Vec<Tranche>,
+        is_cancelable: bool,
+        is_transferable: bool,
+    ) -> u32 {
+        sender.require_auth();
+
+        if tranches.is_empty() {
+            panic_with_error!(&env, Error::NoTranches);
+        }
+        if (tranches.len() as u32) > MAX_TRANCHES {
+            panic_with_error!(&env, Error::TooManyTranches);
+        }
+
+        let mut last_ts: u64 = 0;
+        let mut sum: i128 = 0;
+        for (i, t) in tranches.iter().enumerate() {
+            if t.amount <= 0 {
+                panic_with_error!(&env, Error::ZeroDeposit);
+            }
+            if i > 0 && t.ts <= last_ts {
+                panic_with_error!(&env, Error::TranchesNotAscending);
+            }
+            last_ts = t.ts;
+            sum = sum
+                .checked_add(t.amount)
+                .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
+        }
+        let start_ts = tranches.first().unwrap().ts;
+        let end_ts = tranches.last().unwrap().ts;
+        if start_ts < env.ledger().timestamp() {
+            panic_with_error!(&env, Error::StartInPast);
+        }
+
+        let deposited = sum;
+        let client = token::Client::new(&env, &token);
+        client.transfer(&sender, &env.current_contract_address(), &deposited);
+
+        let stream = Stream {
+            sender: sender.clone(),
+            recipient: recipient.clone(),
+            token: token.clone(),
+            start_ts,
+            end_ts,
+            is_cancelable,
+            is_transferable,
+            was_canceled: false,
+            is_depleted: false,
+            deposited,
+            withdrawn: 0,
+            refunded: 0,
+            shape: StreamShape::Tranched(TranchedShape { tranches: tranches.clone() }),
+        };
+        let id = next_id(&env);
+        save_stream(&env, id, &stream);
+        events::stream_created(&env, id, &stream);
         id
     }
 }
