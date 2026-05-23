@@ -11,6 +11,9 @@ mod lifecycle;
 mod nft;
 mod view;
 
+const STREAM_TTL_BUMP_LEDGERS: u32 = 17_280 * 90; // ~90 days at 5s/ledger
+const STREAM_TTL_MIN_LEDGERS: u32 = 17_280 * 30;  // bump if below ~30 days
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub enum DataKey {
@@ -59,16 +62,24 @@ pub(crate) fn next_id(env: &Env) -> u32 {
 }
 
 pub(crate) fn save_stream(env: &Env, stream_id: u32, stream: &Stream) {
+    let key = DataKey::Stream(stream_id);
+    env.storage().persistent().set(&key, stream);
     env.storage()
         .persistent()
-        .set(&DataKey::Stream(stream_id), stream);
+        .extend_ttl(&key, STREAM_TTL_MIN_LEDGERS, STREAM_TTL_BUMP_LEDGERS);
 }
 
 pub(crate) fn load_stream(env: &Env, stream_id: u32) -> Stream {
+    let key = DataKey::Stream(stream_id);
+    let s: Stream = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| panic_with_error!(env, Error::StreamNotFound));
     env.storage()
         .persistent()
-        .get(&DataKey::Stream(stream_id))
-        .unwrap_or_else(|| panic_with_error!(env, Error::StreamNotFound))
+        .extend_ttl(&key, STREAM_TTL_MIN_LEDGERS, STREAM_TTL_BUMP_LEDGERS);
+    s
 }
 
 #[cfg(test)]
