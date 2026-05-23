@@ -181,3 +181,24 @@ fn nft_minted_on_create_linear() {
     assert_eq!(f.lockup.get_token_id(&0), id);
     assert_eq!(f.lockup.get_owner_token_id(&f.recipient, &0), id);
 }
+
+#[test]
+fn create_mints_nft_to_recipient() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_linear(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000i128,
+        &(now + 100),
+        &(now + 100),
+        &(now + 1_100),
+        &0i128,
+        &0i128,
+        &true,
+        &true,
+    );
+    // The NFT's `owner_of(token_id)` should equal the recipient.
+    assert_eq!(f.lockup.owner_of(&id), f.recipient);
+}
