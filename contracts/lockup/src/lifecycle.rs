@@ -56,6 +56,55 @@ impl Lockup {
     }
 }
 
+#[contractimpl]
+impl Lockup {
+    pub fn cancel(env: Env, stream_id: u32) {
+        let mut s = load_stream(&env, stream_id);
+
+        s.sender.require_auth();
+
+        if !s.is_cancelable {
+            panic_with_error!(&env, Error::NotCancelable);
+        }
+        if s.was_canceled {
+            panic_with_error!(&env, Error::AlreadyCanceled);
+        }
+        if s.is_depleted {
+            panic_with_error!(&env, Error::AlreadyDepleted);
+        }
+        let now = env.ledger().timestamp();
+        let status = s.status(now);
+        if !matches!(
+            status,
+            hourglass_shared::StreamStatus::Pending | hourglass_shared::StreamStatus::Streaming
+        ) {
+            panic_with_error!(&env, Error::InvalidStatus);
+        }
+
+        let streamed = hourglass_shared::math::streamed_amount(&s, now)
+            .unwrap_or_else(|e| panic_with_error!(&env, e));
+        let recipient_balance = streamed - s.withdrawn;
+        let sender_refund = s.deposited - streamed;
+
+        if sender_refund > 0 {
+            let token_client = token::Client::new(&env, &s.token);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &s.sender,
+                &sender_refund,
+            );
+        }
+
+        s.was_canceled = true;
+        s.refunded = sender_refund;
+        if recipient_balance == 0 {
+            s.is_depleted = true;
+        }
+        save_stream(&env, stream_id, &s);
+        events::canceled(&env, stream_id, sender_refund, recipient_balance);
+    }
+}
+
 fn native_token(env: &Env) -> token::Client {
     let native: Address = env
         .storage()
