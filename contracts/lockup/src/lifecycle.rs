@@ -105,6 +105,28 @@ impl Lockup {
     }
 }
 
+#[contractimpl]
+impl Lockup {
+    pub fn renounce(env: Env, stream_id: u32) {
+        let mut s = load_stream(&env, stream_id);
+        s.sender.require_auth();
+        if !s.is_cancelable {
+            panic_with_error!(&env, Error::NotCancelable);
+        }
+        let now = env.ledger().timestamp();
+        let status = s.status(now);
+        if !matches!(
+            status,
+            hourglass_shared::StreamStatus::Pending | hourglass_shared::StreamStatus::Streaming
+        ) {
+            panic_with_error!(&env, Error::InvalidStatus);
+        }
+        s.is_cancelable = false;
+        save_stream(&env, stream_id, &s);
+        events::renounced(&env, stream_id);
+    }
+}
+
 fn native_token(env: &Env) -> token::Client {
     let native: Address = env
         .storage()

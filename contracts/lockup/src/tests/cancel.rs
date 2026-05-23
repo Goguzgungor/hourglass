@@ -84,3 +84,47 @@ fn cancel_at_start_full_refund() {
     let s = f.lockup.get_stream(&id);
     assert!(s.is_depleted); // nothing streamed, nothing to withdraw
 }
+
+#[test]
+fn renounce_flips_cancelable() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_linear(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000i128,
+        &(now + 100),
+        &(now + 100),
+        &(now + 1_100),
+        &0i128,
+        &0i128,
+        &true,
+        &true,
+    );
+    assert!(f.lockup.get_stream(&id).is_cancelable);
+    f.lockup.renounce(&id);
+    assert!(!f.lockup.get_stream(&id).is_cancelable);
+}
+
+#[test]
+#[should_panic]
+fn cancel_after_renounce_fails() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_linear(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000i128,
+        &(now + 100),
+        &(now + 100),
+        &(now + 1_100),
+        &0i128,
+        &0i128,
+        &true,
+        &true,
+    );
+    f.lockup.renounce(&id);
+    f.lockup.cancel(&id);
+}
