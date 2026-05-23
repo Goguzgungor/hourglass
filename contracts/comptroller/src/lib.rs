@@ -50,4 +50,19 @@ impl Comptroller {
     }
 }
 
+fn require_admin(env: &Env) {
+    let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+    admin.require_auth();
+}
+
+#[contractimpl]
+impl Comptroller {
+    pub fn set_admin(env: Env, new_admin: Address) {
+        require_admin(&env);
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.events()
+            .publish((symbol_short!("admin"), symbol_short!("changed")), new_admin);
+    }
+}
+
 mod tests;
