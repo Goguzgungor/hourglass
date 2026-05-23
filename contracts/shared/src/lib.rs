@@ -5,4 +5,4 @@ pub mod math;
 pub mod types;
 
 pub use errors::Error;
-pub use types::{OpKind, Stream, StreamShape, StreamStatus, Tranche};
+pub use types::{LinearShape, OpKind, Stream, StreamShape, StreamStatus, Tranche, TranchedShape};
