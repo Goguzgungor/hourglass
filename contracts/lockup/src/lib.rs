@@ -16,6 +16,7 @@ mod view;
 pub enum DataKey {
     Admin,
     Comptroller,
+    NativeToken,
     NextStreamId,
     Stream(u32),
 }
@@ -25,9 +26,10 @@ pub struct Lockup;
 
 #[contractimpl]
 impl Lockup {
-    pub fn __constructor(env: Env, admin: Address, comptroller: Address) {
+    pub fn __constructor(env: Env, admin: Address, comptroller: Address, native_token: Address) {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Comptroller, &comptroller);
+        env.storage().instance().set(&DataKey::NativeToken, &native_token);
         env.storage().instance().set(&DataKey::NextStreamId, &1u32);
         nft::init(&env);
     }

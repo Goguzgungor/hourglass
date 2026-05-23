@@ -27,6 +27,8 @@ pub struct Fixture<'a> {
     pub lockup: LockupClient<'a>,
     pub comptroller_addr: Address,
     pub comptroller: ComptrollerClient<'a>,
+    pub native: Address,
+    pub native_admin: StellarAssetClient<'a>,
 }
 
 pub fn setup<'a>() -> Fixture<'a> {
@@ -46,6 +48,11 @@ pub fn setup<'a>() -> Fixture<'a> {
 
     token_admin.mint(&sender, &1_000_000_000_000i128);
 
+    let native_contract = env.register_stellar_asset_contract_v2(issuer.clone());
+    let native = native_contract.address();
+    let native_admin = StellarAssetClient::new(&env, &native);
+    native_admin.mint(&recipient, &10_000_000_000i128);
+
     let oracle = env.register(OracleStub, ());
     let comptroller_addr = env.register(
         Comptroller,
@@ -53,7 +60,10 @@ pub fn setup<'a>() -> Fixture<'a> {
     );
     let comptroller = ComptrollerClient::new(&env, &comptroller_addr);
 
-    let lockup_addr = env.register(Lockup, (admin.clone(), comptroller_addr.clone()));
+    let lockup_addr = env.register(
+        Lockup,
+        (admin.clone(), comptroller_addr.clone(), native.clone()),
+    );
     let lockup = LockupClient::new(&env, &lockup_addr);
 
     Fixture {
@@ -68,5 +78,7 @@ pub fn setup<'a>() -> Fixture<'a> {
         lockup,
         comptroller_addr,
         comptroller,
+        native,
+        native_admin,
     }
 }
