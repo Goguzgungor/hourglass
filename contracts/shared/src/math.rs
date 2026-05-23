@@ -175,3 +175,73 @@ mod linear_tests {
         }
     }
 }
+
+use crate::types::Tranche;
+use soroban_sdk::Vec as SorobanVec;
+
+/// Cumulative streamed amount for a Tranched stream: sum of all tranche amounts
+/// whose timestamp has passed (ts <= now).
+///
+/// Caller must ensure tranches are sorted ascending by ts (enforced at create).
+pub fn streamed_amount_tranched(
+    tranches: &SorobanVec<Tranche>,
+    now: u64,
+) -> Result<i128, Error> {
+    let mut acc: i128 = 0;
+    for t in tranches.iter() {
+        if t.ts > now {
+            break;
+        }
+        acc = add(acc, t.amount)?;
+    }
+    Ok(acc)
+}
+
+#[cfg(test)]
+mod tranched_tests {
+    use super::*;
+    use soroban_sdk::Env;
+
+    fn tranches(env: &Env, items: &[(i128, u64)]) -> SorobanVec<Tranche> {
+        let mut v = SorobanVec::new(env);
+        for (amount, ts) in items {
+            v.push_back(Tranche { amount: *amount, ts: *ts });
+        }
+        v
+    }
+
+    #[test]
+    fn zero_before_first_tranche() {
+        let env = Env::default();
+        let t = tranches(&env, &[(100, 1_000), (200, 2_000)]);
+        assert_eq!(streamed_amount_tranched(&t, 500).unwrap(), 0);
+    }
+
+    #[test]
+    fn first_tranche_at_its_ts() {
+        let env = Env::default();
+        let t = tranches(&env, &[(100, 1_000), (200, 2_000)]);
+        assert_eq!(streamed_amount_tranched(&t, 1_000).unwrap(), 100);
+    }
+
+    #[test]
+    fn accumulates_through_tranches() {
+        let env = Env::default();
+        let t = tranches(&env, &[(100, 1_000), (200, 2_000), (300, 3_000)]);
+        assert_eq!(streamed_amount_tranched(&t, 2_500).unwrap(), 300);
+    }
+
+    #[test]
+    fn full_after_last_tranche() {
+        let env = Env::default();
+        let t = tranches(&env, &[(100, 1_000), (200, 2_000), (300, 3_000)]);
+        assert_eq!(streamed_amount_tranched(&t, 99_999).unwrap(), 600);
+    }
+
+    #[test]
+    fn empty_returns_zero() {
+        let env = Env::default();
+        let t = tranches(&env, &[]);
+        assert_eq!(streamed_amount_tranched(&t, 99_999).unwrap(), 0);
+    }
+}
