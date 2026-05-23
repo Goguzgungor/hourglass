@@ -1,5 +1,6 @@
 use super::common::setup;
-use hourglass_shared::StreamShape;
+use hourglass_shared::{StreamShape, StreamStatus};
+use soroban_sdk::testutils::Ledger as _;
 
 #[test]
 fn create_linear_pulls_tokens_and_persists() {
@@ -110,4 +111,36 @@ fn create_linear_rejects_unlocks_exceeding_deposit() {
         &true,
         &true,
     );
+}
+
+#[test]
+fn streamed_amount_progresses_with_time() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_linear(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000_000i128,
+        &(now + 100),
+        &(now + 100),
+        &(now + 1_100),
+        &0i128,
+        &0i128,
+        &true,
+        &true,
+    );
+    // Pending before start.
+    assert_eq!(f.lockup.streamed_amount(&id), 0);
+    assert_eq!(f.lockup.status(&id), StreamStatus::Pending);
+
+    // Halfway: now = start + 600 (out of 1000).
+    f.env.ledger().set_timestamp(now + 700);
+    assert_eq!(f.lockup.streamed_amount(&id), 600_000);
+    assert_eq!(f.lockup.status(&id), StreamStatus::Streaming);
+
+    // After end.
+    f.env.ledger().set_timestamp(now + 100_000);
+    assert_eq!(f.lockup.streamed_amount(&id), 1_000_000);
+    assert_eq!(f.lockup.status(&id), StreamStatus::Settled);
 }
