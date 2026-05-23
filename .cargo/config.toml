@@ -1,0 +1,8 @@
+# Set the env var that soroban-sdk 25.x's `experimental_spec_shaking_v2`
+# feature requires. This feature is unconditionally enabled by OZ's
+# `stellar-tokens` v0.7.1 dependency, but the soroban-sdk build script
+# normally only sets it when invoked via `stellar contract build`
+# (stellar-cli v25.2.0+). Setting it here makes plain `cargo build`
+# work transparently for the wasm32v1-none target.
+[env]
+SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2 = "1"

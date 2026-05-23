@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "contracts/shared",
     "contracts/comptroller",
-    # "contracts/lockup",
+    "contracts/lockup",
 ]
 
 [workspace.package]
