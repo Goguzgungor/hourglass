@@ -2,7 +2,7 @@
 
 use hourglass_shared::Error;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol,
+    contract, contractimpl, contracttype, panic_with_error, symbol_short, Address, Env, Symbol,
 };
 
 mod oracle;
@@ -62,6 +62,37 @@ impl Comptroller {
         env.storage().instance().set(&DataKey::Admin, &new_admin);
         env.events()
             .publish((symbol_short!("admin"), symbol_short!("changed")), new_admin);
+    }
+}
+
+/// Convert an OpKind to its DataKey index. Keep stable forever (don't reorder).
+fn op_index(op: &hourglass_shared::OpKind) -> u32 {
+    match op {
+        hourglass_shared::OpKind::Withdraw => 1,
+    }
+}
+
+#[contractimpl]
+impl Comptroller {
+    pub fn set_fee_usd_micros(env: Env, op: hourglass_shared::OpKind, micros: i128) {
+        require_admin(&env);
+        if micros < 0 {
+            panic_with_error!(&env, Error::InvalidCall);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeUsdMicros(op_index(&op)), &micros);
+        env.events().publish(
+            (Symbol::new(&env, "fee_set"), op_index(&op)),
+            micros,
+        );
+    }
+
+    pub fn get_fee_usd_micros(env: Env, op: hourglass_shared::OpKind) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::FeeUsdMicros(op_index(&op)))
+            .unwrap_or(0)
     }
 }
 

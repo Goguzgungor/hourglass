@@ -44,3 +44,38 @@ fn set_admin_without_auth_fails() {
     // No mock_all_auths -> require_auth panics.
     client.set_admin(&new_admin);
 }
+
+use hourglass_shared::OpKind;
+
+#[test]
+fn fee_defaults_to_zero() {
+    let (env, id, _a, _fc, _o) = setup();
+    let client = ComptrollerClient::new(&env, &id);
+    assert_eq!(client.get_fee_usd_micros(&OpKind::Withdraw), 0);
+}
+
+#[test]
+fn admin_can_set_fee() {
+    let (env, id, _a, _fc, _o) = setup();
+    let client = ComptrollerClient::new(&env, &id);
+    env.mock_all_auths();
+    client.set_fee_usd_micros(&OpKind::Withdraw, &99_000);
+    assert_eq!(client.get_fee_usd_micros(&OpKind::Withdraw), 99_000);
+}
+
+#[test]
+#[should_panic]
+fn non_admin_cannot_set_fee() {
+    let (env, id, _a, _fc, _o) = setup();
+    let client = ComptrollerClient::new(&env, &id);
+    client.set_fee_usd_micros(&OpKind::Withdraw, &99_000);
+}
+
+#[test]
+#[should_panic]
+fn negative_fee_rejected() {
+    let (env, id, _a, _fc, _o) = setup();
+    let client = ComptrollerClient::new(&env, &id);
+    env.mock_all_auths();
+    client.set_fee_usd_micros(&OpKind::Withdraw, &-1);
+}
