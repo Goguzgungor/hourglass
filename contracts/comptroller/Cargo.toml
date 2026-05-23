@@ -11,6 +11,10 @@ description = "Hourglass admin + fee oracle contract"
 crate-type = ["cdylib"]
 doctest = false
 
+[features]
+default = []
+reflector = []
+
 [dependencies]
 soroban-sdk = { workspace = true }
 hourglass-shared = { path = "../shared" }
