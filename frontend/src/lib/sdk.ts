@@ -46,6 +46,15 @@ export interface LockupClient {
     stream_id: number;
     to: string;
   }): Promise<AssembledTransaction<null>>;
+  withdraw_max_and_transfer(args: {
+    stream_id: number;
+    new_owner: string;
+  }): Promise<AssembledTransaction<null>>;
+  transfer(args: {
+    from: string;
+    to: string;
+    token_id: number;
+  }): Promise<AssembledTransaction<null>>;
   cancel(args: { stream_id: number }): Promise<AssembledTransaction<null>>;
   renounce(args: { stream_id: number }): Promise<AssembledTransaction<null>>;
   burn(args: { stream_id: number }): Promise<AssembledTransaction<null>>;

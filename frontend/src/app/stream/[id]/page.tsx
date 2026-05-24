@@ -17,6 +17,7 @@ import {
   formatStroops,
   formatTimestamp,
   formatDuration,
+  isStellarAddress,
   truncAddress,
 } from '@/lib/format';
 import type { Stream, StreamStatus } from 'hourglass/lockup';
@@ -29,6 +30,7 @@ import AttributePill from '@/components/AttributePill';
 import ScheduleTimeline from '@/components/ScheduleTimeline';
 import AmountTile from '@/components/AmountTile';
 import StatusPill, { type StreamStatusTag } from '@/components/StatusPill';
+import NFTReceiptCard from '@/components/NFTReceiptCard';
 
 /* ----------------------------------------------------------------- *
  * Helpers                                                          *
@@ -42,6 +44,22 @@ function statusTag(s: StreamStatus): Status {
 
 function shapeLabel(s: Stream): 'LINEAR' | 'TRANCHED' {
   return s.shape.tag === 'Linear' ? 'LINEAR' : 'TRANCHED';
+}
+
+/**
+ * Approximate "sand remaining" fill for the NFT receipt hourglass icon.
+ * 1.0 → full upper bulb (pending), 0.0 → fully drained (settled/depleted).
+ */
+function fillFromStatus(
+  status: Status,
+  withdrawn: bigint,
+  deposited: bigint,
+): number {
+  if (status === 'PENDING') return 1;
+  if (status === 'DEPLETED' || status === 'SETTLED') return 0;
+  if (deposited <= 0n) return 0.5;
+  const drained = Number(withdrawn) / Number(deposited);
+  return Math.max(0, Math.min(1, 1 - drained));
 }
 
 /* ----------------------------------------------------------------- *
@@ -247,6 +265,7 @@ function StreamDetail({ streamId }: { streamId: number }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [withdrawable, setWithdrawable] = useState<bigint>(0n);
   const [withdrawableTs, setWithdrawableTs] = useState<number>(Date.now());
+  const [nftOwner, setNftOwner] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -267,6 +286,14 @@ function StreamDetail({ streamId }: { streamId: number }) {
       setWithdrawableTs(Date.now());
       setMissing(false);
       setLoadError(null);
+      // NFT owner — token_id is the same as the stream id (one NFT per
+      // stream). If the stream was burned this throws; treat as "no owner".
+      try {
+        const ownerTx = await lockup.owner_of({ token_id: streamId });
+        setNftOwner(String(ownerTx.result));
+      } catch {
+        setNftOwner(null);
+      }
     } catch (err) {
       const msg = (err as Error).message ?? String(err);
       if (
@@ -315,6 +342,7 @@ function StreamDetail({ streamId }: { streamId: number }) {
       status={status}
       withdrawable={withdrawable}
       withdrawableTs={withdrawableTs}
+      nftOwner={nftOwner}
       reload={load}
     />
   );
@@ -324,8 +352,8 @@ function StreamDetail({ streamId }: { streamId: number }) {
  * Loaded view                                                      *
  * ----------------------------------------------------------------- */
 
-type TabId = 'stream' | 'schedule' | 'emission' | 'events';
-const TAB_IDS: TabId[] = ['stream', 'schedule', 'emission', 'events'];
+type TabId = 'stream' | 'schedule' | 'emission' | 'nft' | 'events';
+const TAB_IDS: TabId[] = ['stream', 'schedule', 'emission', 'nft', 'events'];
 
 function isTabId(v: string): v is TabId {
   return (TAB_IDS as readonly string[]).includes(v);
@@ -337,6 +365,7 @@ function LoadedStream({
   status,
   withdrawable,
   withdrawableTs,
+  nftOwner,
   reload,
 }: {
   streamId: number;
@@ -344,6 +373,7 @@ function LoadedStream({
   status: Status;
   withdrawable: bigint;
   withdrawableTs: number;
+  nftOwner: string | null;
   reload: () => Promise<void>;
 }) {
   const { address } = useWallet();
@@ -464,15 +494,10 @@ function LoadedStream({
     if (!isRecipient) return;
     setPendingAction('transfer');
     try {
-      const lockup = makeLockup(address) as unknown as {
-        withdraw_max_and_transfer: (args: {
-          stream_id: number;
-          new_recipient: string;
-        }) => Promise<{ signAndSend: () => Promise<unknown> }>;
-      };
+      const lockup = makeLockup(address);
       const tx = await lockup.withdraw_max_and_transfer({
         stream_id: streamId,
-        new_recipient: transferTo.trim(),
+        new_owner: transferTo.trim(),
       });
       await tx.signAndSend();
       toast.push({
@@ -487,6 +512,64 @@ function LoadedStream({
       toast.push({
         kicker: 'Transfer failed',
         message: (e as Error).message,
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  /* ---------- NFT tab transfer form ---------- */
+
+  const [nftTransferTo, setNftTransferTo] = useState('');
+  const [nftWithdrawFirst, setNftWithdrawFirst] = useState(false);
+  const [nftTransferError, setNftTransferError] = useState<string | null>(null);
+
+  const isNftOwner = !!address && !!nftOwner && address === nftOwner;
+  const trimmedNftTo = nftTransferTo.trim();
+  const nftToValid =
+    trimmedNftTo.length === 0 ||
+    (isStellarAddress(trimmedNftTo) && trimmedNftTo !== nftOwner);
+  const canSubmitNftTransfer =
+    isNftOwner &&
+    !!stream.is_transferable &&
+    isStellarAddress(trimmedNftTo) &&
+    trimmedNftTo !== nftOwner &&
+    pendingAction === null;
+
+  const callNftTransfer = async () => {
+    if (!canSubmitNftTransfer || !nftOwner) return;
+    setNftTransferError(null);
+    setPendingAction('transfer');
+    try {
+      const lockup = makeLockup(address);
+      if (nftWithdrawFirst) {
+        const tx = await lockup.withdraw_max_and_transfer({
+          stream_id: streamId,
+          new_owner: trimmedNftTo,
+        });
+        await tx.signAndSend();
+      } else {
+        const tx = await lockup.transfer({
+          from: nftOwner,
+          to: trimmedNftTo,
+          token_id: streamId,
+        });
+        await tx.signAndSend();
+      }
+      toast.push({
+        kicker: `Stream #${streamId} / NFT transferred`,
+        message: `Owner set to ${truncAddress(trimmedNftTo)}.`,
+      });
+      setNftTransferTo('');
+      setNftWithdrawFirst(false);
+      await reload();
+    } catch (e) {
+      console.error(e);
+      const msg = (e as Error).message ?? String(e);
+      setNftTransferError(msg);
+      toast.push({
+        kicker: 'NFT transfer failed',
+        message: msg,
       });
     } finally {
       setPendingAction(null);
@@ -656,6 +739,7 @@ function LoadedStream({
                 { id: 'stream', label: 'Stream' },
                 { id: 'schedule', label: 'Schedule' },
                 { id: 'emission', label: 'Emission' },
+                { id: 'nft', label: 'NFT' },
                 { id: 'events', label: 'Events' },
               ]}
               active={activeTab}
@@ -796,6 +880,199 @@ function LoadedStream({
               </div>
             )}
 
+            {activeTab === 'nft' && (
+              <div
+                className="mt-8 grid grid-cols-1 md:grid-cols-[1fr_360px] gap-12 reveal"
+                style={{ animationDelay: '60ms' }}
+              >
+                {/* LEFT: explanation + transfer form */}
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-cream-dim">
+                    <span className="text-sand">·</span> This stream is an NFT
+                  </p>
+                  <h2 className="mt-3 font-display italic text-[clamp(1.75rem,3vw,2.25rem)] leading-tight text-cream">
+                    A transferable receipt for the right to claim{' '}
+                    {formatStroops(deposited)} XLM.
+                  </h2>
+                  <p className="mt-4 max-w-prose text-[15px] leading-relaxed text-cream-muted">
+                    Each stream is wrapped in an on-chain non-fungible token
+                    implementing the OpenZeppelin
+                    <span className="font-mono text-sand"> NonFungibleToken</span>{' '}
+                    trait with the
+                    <span className="font-mono text-sand"> Enumerable</span>{' '}
+                    extension. Transferring the NFT transfers the right to all
+                    future withdrawals.
+                  </p>
+
+                  {/* Attribute strip */}
+                  <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-stroke pt-6">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-cream-dim">
+                        Token ID
+                      </p>
+                      <p className="mt-1 font-mono text-cream text-lg tabular">
+                        #{streamId}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-cream-dim">
+                        Standard
+                      </p>
+                      <p className="mt-1 font-mono text-cream text-sm">
+                        OZ NonFungibleToken · Enumerable
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-cream-dim">
+                        Current Owner
+                      </p>
+                      <p
+                        className={
+                          'mt-1 font-mono text-sm tabular ' +
+                          (nftOwner && nftOwner !== stream.recipient
+                            ? 'text-rose'
+                            : 'text-cream')
+                        }
+                        title={nftOwner ?? undefined}
+                      >
+                        {nftOwner ? truncAddress(nftOwner) : '—'}
+                      </p>
+                      {nftOwner && nftOwner !== stream.recipient && (
+                        <p className="mt-0.5 text-rose text-[11px]">
+                          ⚠ Differs from stream recipient
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-violet">
+                        Transferable
+                      </p>
+                      <p
+                        className={
+                          'mt-1 font-mono uppercase tracking-[0.18em] text-xs ' +
+                          (stream.is_transferable
+                            ? 'text-teal-bright'
+                            : 'text-cream-dim')
+                        }
+                      >
+                        {stream.is_transferable ? 'Yes' : 'No'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Transfer form */}
+                  <div className="mt-10 border-t border-stroke pt-8">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-cream-dim">
+                      Transfer NFT
+                    </p>
+                    <h3 className="mt-2 font-display italic text-2xl text-cream">
+                      Hand over the stream.
+                    </h3>
+                    <p className="mt-2 max-w-md text-sm text-cream-muted leading-relaxed">
+                      The new owner becomes the recipient and inherits all
+                      future withdrawal rights. Optionally withdraw your accrued
+                      portion first.
+                    </p>
+
+                    <div className="mt-6 max-w-md space-y-5">
+                      <div>
+                        <label className="text-[10px] uppercase tracking-[0.16em] text-cream-dim">
+                          New owner address
+                        </label>
+                        <input
+                          type="text"
+                          spellCheck={false}
+                          value={nftTransferTo}
+                          onChange={(e) => {
+                            setNftTransferTo(e.target.value);
+                            setNftTransferError(null);
+                          }}
+                          placeholder="G…"
+                          className="mt-2 w-full bg-transparent border-b border-stroke focus:border-sand outline-none font-mono text-sm text-cream py-2 transition-colors placeholder:text-cream-dim/60"
+                        />
+                        {!nftToValid && (
+                          <p className="mt-2 text-rose text-[11px]">
+                            {trimmedNftTo === nftOwner
+                              ? 'Cannot transfer to the current owner.'
+                              : 'Not a valid Stellar G… address.'}
+                          </p>
+                        )}
+                      </div>
+
+                      <label className="flex items-center gap-3 text-cream-muted text-sm cursor-pointer select-none">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={nftWithdrawFirst}
+                          onClick={() => setNftWithdrawFirst((v) => !v)}
+                          className="relative inline-block w-[26px] h-4 border border-stroke align-middle"
+                        >
+                          <span
+                            aria-hidden
+                            className="absolute top-[1px] left-[1px] w-3 h-3 bg-sand transition-transform"
+                            style={{
+                              transform: nftWithdrawFirst
+                                ? 'translateX(11px)'
+                                : 'translateX(0)',
+                            }}
+                          />
+                        </button>
+                        Withdraw accrued portion first
+                      </label>
+
+                      <div className="flex gap-3 pt-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={callNftTransfer}
+                          disabled={!canSubmitNftTransfer}
+                          className="inline-flex items-center bg-sand text-night uppercase tracking-[0.18em] text-[11px] font-medium px-5 py-3 hover:bg-sand-bright transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded-sm"
+                        >
+                          {pendingAction === 'transfer'
+                            ? 'Transferring…'
+                            : nftWithdrawFirst
+                              ? 'Withdraw + Transfer NFT →'
+                              : 'Transfer NFT →'}
+                        </button>
+                      </div>
+
+                      {!address && (
+                        <p className="text-cream-dim text-[11px]">
+                          Connect a wallet to transfer.
+                        </p>
+                      )}
+                      {address && !isNftOwner && nftOwner && (
+                        <p className="text-rose text-[11px]">
+                          Only the current NFT owner can transfer.
+                        </p>
+                      )}
+                      {!stream.is_transferable && (
+                        <p className="text-rose text-[11px]">
+                          This NFT was minted as non-transferable.
+                        </p>
+                      )}
+                      {nftTransferError && (
+                        <p className="text-rose text-[11px] break-all">
+                          {nftTransferError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* RIGHT: NFT receipt visualization */}
+                <div>
+                  <NFTReceiptCard
+                    streamId={streamId}
+                    owner={nftOwner}
+                    deposited={deposited}
+                    is_transferable={stream.is_transferable}
+                    status={status}
+                    fill={fillFromStatus(status, withdrawn, deposited)}
+                  />
+                </div>
+              </div>
+            )}
+
             {activeTab === 'events' && (
               <div className="mt-8 reveal" style={{ animationDelay: '60ms' }}>
                 <EventsLog streamId={streamId} />
@@ -916,12 +1193,13 @@ function LoadedStream({
             />
             <AttributePill
               label="Transferable"
+              accent="violet"
               value={
                 <span
                   className={
                     'inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] ' +
                     (stream.is_transferable
-                      ? 'text-teal-bright'
+                      ? 'text-violet'
                       : 'text-cream-dim')
                   }
                 >
@@ -936,6 +1214,57 @@ function LoadedStream({
               value={
                 <span className="font-mono text-sm text-cream">
                   #{streamId}
+                </span>
+              }
+            />
+            <AttributePill
+              label="NFT Token ID"
+              icon={<IconHash />}
+              value={
+                <span className="font-mono text-sm text-cream-muted">
+                  #{streamId}
+                </span>
+              }
+            />
+            <AttributePill
+              label="NFT Owner"
+              icon={<IconAtSign />}
+              value={
+                nftOwner ? (
+                  <span
+                    className={
+                      'inline-flex items-center gap-1.5 font-mono text-sm ' +
+                      (nftOwner !== stream.recipient
+                        ? 'text-rose'
+                        : 'text-cream')
+                    }
+                    title={
+                      nftOwner !== stream.recipient
+                        ? 'Owner differs from streamed-to address — NFT was transferred'
+                        : nftOwner
+                    }
+                  >
+                    {nftOwner !== stream.recipient && (
+                      <span aria-hidden className="text-rose">
+                        ⚠
+                      </span>
+                    )}
+                    {truncAddress(nftOwner)}
+                  </span>
+                ) : (
+                  <span className="font-mono text-sm text-cream-dim">—</span>
+                )
+              }
+              accent={
+                nftOwner && nftOwner !== stream.recipient ? 'rose' : undefined
+              }
+              copyable={nftOwner ?? undefined}
+            />
+            <AttributePill
+              label="NFT Standard"
+              value={
+                <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-cream-muted">
+                  OZ NFT · Enumerable
                 </span>
               }
             />
