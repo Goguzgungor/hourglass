@@ -25,6 +25,13 @@ deployments/*.local.json
 *.db-shm
 *.db-wal
 
+# Playwright / screenshot artifacts
+.playwright-mcp/
+playwright-report/
+test-results/
+*.png
+!frontend/public/**/*.png
+
 # OS / editor
 .DS_Store
 .vscode/
