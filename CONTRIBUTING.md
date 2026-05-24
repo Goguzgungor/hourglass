@@ -42,3 +42,29 @@ Scopes match crate names: `shared`, `lockup`, `comptroller`, plus `build`, `depl
 - Default: `soroban_sdk::Env` in-process tests via `cargo test`. No network needed.
 - Local end-to-end (optional, future): local Stellar quickstart docker.
 - Public testnet: don't deploy from local — that's a release-cut activity.
+
+## End-to-end against a local Stellar network
+
+For wasm-level / RPC-level verification (instead of in-process `Env`), use the
+local Stellar quickstart Docker image. **Never deploy from local dev to public
+testnet** — that's a release-cut activity.
+
+```bash
+# one-time: pull the image
+docker pull stellar/quickstart:testing
+
+# start the local network (RPC at http://localhost:8000/soroban/rpc)
+./scripts/quickstart-up.sh
+
+# deploy comptroller + lockup, writing IDs to deployments/local.json
+./scripts/deploy-local.sh
+
+# run the end-to-end smoke (create stream → withdraw)
+./scripts/smoke-local.sh
+
+# stop the network when done
+docker stop hourglass-quickstart
+```
+
+Network: `local` (passphrase `Standalone Network ; February 2017`). Friendbot
+at `http://localhost:8000/friendbot`.
