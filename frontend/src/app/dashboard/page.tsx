@@ -60,9 +60,9 @@ function streamedFraction(s: StreamDoc, nowSec: number): number {
 export default function DashboardPage(): ReactNode {
   const { address, pending } = useWallet();
   return (
-    <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-10 sm:pt-16 md:pt-24 pb-16">
+    <div className="mx-auto max-w-[1280px] xl:max-w-[1640px] 2xl:max-w-[1920px] px-4 sm:px-6 md:px-10 xl:px-16 2xl:px-24 pt-10 sm:pt-16 md:pt-24 xl:pt-28 pb-16">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 mb-8 sm:mb-10">
-        <p className="eyebrow">
+        <p className="eyebrow xl:text-[0.78rem] 2xl:text-[0.85rem]">
           <span className="text-sand">·</span>{' '}
           <span className="ml-1">Dashboard</span>{' '}
           <span className="mx-2 text-stroke-2">/</span>
@@ -85,13 +85,13 @@ export default function DashboardPage(): ReactNode {
 
 function DisconnectedView({ pending: _pending }: { pending: boolean }): ReactNode {
   return (
-    <div className="mt-12 sm:mt-20 mx-auto max-w-[560px] text-center">
-      <h1 className="headline text-4xl sm:text-5xl md:text-6xl text-cream leading-[0.95]">
+    <div className="mt-12 sm:mt-20 xl:mt-28 mx-auto max-w-[560px] xl:max-w-[720px] 2xl:max-w-[840px] text-center">
+      <h1 className="headline text-4xl sm:text-5xl md:text-6xl xl:text-7xl 2xl:text-8xl text-cream leading-[0.95]">
         A ledger,
         <br />
         <span className="text-sand-bright">awaiting an owner.</span>
       </h1>
-      <p className="mt-6 sm:mt-8 text-cream-muted leading-relaxed">
+      <p className="mt-6 sm:mt-8 xl:mt-10 xl:text-lg 2xl:text-xl text-cream-muted leading-relaxed">
         Connect a wallet to see the streams you’ve sent and the streams flowing
         toward you.
       </p>
@@ -174,7 +174,7 @@ function ConnectedView({ address }: { address: string }): ReactNode {
         </div>
       )}
 
-      <div className="mt-10 sm:mt-14 grid md:grid-cols-2 md:divide-x md:divide-stroke gap-y-10 sm:gap-y-12">
+      <div className="mt-10 sm:mt-14 xl:mt-20 grid md:grid-cols-2 md:divide-x md:divide-stroke gap-y-10 sm:gap-y-12 xl:gap-x-6 2xl:gap-x-10">
         <Column
           label="Outgoing"
           subLabel="You are the sender"
@@ -204,7 +204,7 @@ function ConnectedView({ address }: { address: string }): ReactNode {
 
 function StatsStrip({ stats }: { stats: StatsResponse | null }): ReactNode {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 xl:gap-4 2xl:gap-5">
       <AmountTile
         label="Indexed"
         amount={stats === null ? '—' : String(stats.total)}
@@ -248,10 +248,10 @@ function Column({
   side: 'sender' | 'recipient';
 }): ReactNode {
   return (
-    <section className="md:px-8 first:md:pl-0 last:md:pr-0">
-      <div className="flex items-baseline justify-between mb-6">
-        <p className="eyebrow text-cream">{label}</p>
-        <p className="text-[10px] uppercase tracking-[0.18em] text-cream-dim/70">
+    <section className="md:px-8 xl:px-10 2xl:px-14 first:md:pl-0 last:md:pr-0">
+      <div className="flex items-baseline justify-between mb-6 xl:mb-8">
+        <p className="eyebrow text-cream xl:text-[0.78rem] 2xl:text-[0.85rem]">{label}</p>
+        <p className="text-[10px] xl:text-[11px] 2xl:text-[12px] uppercase tracking-[0.18em] text-cream-dim/70">
           {subLabel}
         </p>
       </div>
@@ -350,13 +350,13 @@ function StreamRow({
       <Link
         href={`/stream/${stream._id}`}
         className="
-          group block py-5 px-2 -mx-2 rounded-sm
+          group block py-5 xl:py-7 2xl:py-8 px-2 -mx-2 rounded-sm
           transition-colors hover:bg-midnight-2/70
         "
       >
         <div className="grid grid-cols-[1fr_auto] gap-x-4 items-start">
           <div className="min-w-0">
-            <p className="eyebrow text-cream-dim mb-2 flex flex-wrap items-center gap-x-2">
+            <p className="eyebrow text-cream-dim mb-2 xl:mb-3 flex flex-wrap items-center gap-x-2 xl:text-[0.78rem] 2xl:text-[0.85rem]">
               <span className="text-sand">·</span>
               <span>Stream #{stream._id}</span>
               <span className="text-stroke-2">/</span>
@@ -364,19 +364,19 @@ function StreamRow({
             </p>
 
             {stream.model === 'Linear' ? (
-              <p className="font-mono text-xl text-cream tabular truncate">
+              <p className="font-mono text-xl xl:text-2xl 2xl:text-3xl text-cream tabular truncate">
                 {formatStroops(stream.deposited)}
-                <span className="ml-2 text-[10px] uppercase tracking-[0.18em] text-cream-dim">
+                <span className="ml-2 text-[10px] xl:text-[11px] 2xl:text-[12px] uppercase tracking-[0.18em] text-cream-dim">
                   XLM
                 </span>
               </p>
             ) : (
-              <p className="headline-roman text-xl text-cream italic">
+              <p className="headline-roman text-xl xl:text-2xl 2xl:text-3xl text-cream italic">
                 Tranched stream
               </p>
             )}
 
-            <p className="mt-2 text-[12px] text-cream-muted truncate">
+            <p className="mt-2 xl:mt-3 text-[12px] xl:text-[13px] 2xl:text-[14px] text-cream-muted truncate">
               {counterpartyLabel}{' '}
               <span className="font-mono text-cream">
                 {truncAddress(counterparty)}

@@ -70,14 +70,14 @@ export default function AmountTile({
       className={
         'relative overflow-hidden rounded-sm border border-stroke ' +
         'border-l-2 bg-gradient-to-br from-midnight to-night/80 ' +
-        'px-4 py-5 transition-colors hover:border-stroke-2 ' +
+        'px-4 py-5 xl:px-6 xl:py-7 2xl:px-8 2xl:py-9 transition-colors hover:border-stroke-2 ' +
         ACCENT_BORDER[accent]
       }
     >
-      <p className="eyebrow text-cream-dim">{label}</p>
+      <p className="eyebrow text-cream-dim xl:text-[0.78rem] 2xl:text-[0.85rem]">{label}</p>
       <p
         className={
-          'mt-3 font-mono tabular text-2xl leading-none truncate ' +
+          'mt-3 xl:mt-4 font-mono tabular text-2xl xl:text-3xl 2xl:text-4xl leading-none truncate ' +
           ACCENT_TEXT[accent] +
           ' ' +
           (pulse ? ACCENT_GLOW[accent] : '')
@@ -94,7 +94,7 @@ export default function AmountTile({
           amount
         )}
       </p>
-      <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-cream-dim">
+      <p className="mt-2 xl:mt-3 font-mono text-[10px] xl:text-[11px] 2xl:text-[12px] uppercase tracking-[0.18em] text-cream-dim">
         {unit}
         {caption && <span className="ml-2 normal-case tracking-normal text-cream-dim/70">{caption}</span>}
       </p>

@@ -637,10 +637,10 @@ function LoadedStream({
   }, [status, startTs, endTs, duration]);
 
   return (
-    <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-8 sm:pt-12 md:pt-16 pb-16">
+    <div className="mx-auto max-w-[1280px] xl:max-w-[1640px] 2xl:max-w-[1920px] px-4 sm:px-6 md:px-10 xl:px-16 2xl:px-24 pt-8 sm:pt-12 md:pt-16 xl:pt-20 pb-16">
       {/* Eyebrow + Status */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5">
-        <p className="eyebrow">
+        <p className="eyebrow xl:text-[0.78rem] 2xl:text-[0.85rem]">
           <span className="text-sand">·</span>{' '}
           <span className="ml-1">Stream #{streamId}</span>{' '}
           <span className="mx-2 text-stroke-2">/</span>
@@ -652,13 +652,13 @@ function LoadedStream({
       </div>
 
       {/* Title */}
-      <h1 className="headline text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-cream break-words">
+      <h1 className="headline text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl 2xl:text-[6rem] text-cream break-words">
         Streaming {formatStroops(deposited)}
-        <span className="ml-3 font-mono text-sm sm:text-base text-cream-dim uppercase tracking-[0.18em] not-italic">
+        <span className="ml-3 font-mono text-sm sm:text-base xl:text-lg 2xl:text-xl text-cream-dim uppercase tracking-[0.18em] not-italic">
           XLM
         </span>
       </h1>
-      <p className="mt-4 max-w-[760px] text-sm sm:text-[15px] leading-relaxed text-cream-muted break-words">
+      <p className="mt-4 xl:mt-6 max-w-[760px] xl:max-w-[940px] 2xl:max-w-[1120px] text-sm sm:text-[15px] xl:text-base 2xl:text-lg leading-relaxed text-cream-muted break-words">
         from{' '}
         <CopyableAddress addr={stream.sender} />
         {' '}to{' '}
@@ -667,10 +667,10 @@ function LoadedStream({
       </p>
 
       {/* Two-column layout */}
-      <div className="mt-10 sm:mt-12 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-10 lg:gap-12">
+      <div className="mt-10 sm:mt-12 xl:mt-16 grid grid-cols-1 lg:grid-cols-[1fr_320px] xl:grid-cols-[1fr_380px] 2xl:grid-cols-[1fr_440px] gap-10 lg:gap-12 xl:gap-16">
         {/* LEFT: dial + actions + tabs */}
         <section>
-          <div className="reveal">
+          <div className="reveal mx-auto max-w-[520px] xl:max-w-[600px] 2xl:max-w-[680px]">
             <CelestialDial
               deposited={deposited}
               withdrawn={withdrawn}
@@ -772,7 +772,7 @@ function LoadedStream({
             {/* Tab content */}
             {activeTab === 'stream' && (
               <div
-                className="mt-6 sm:mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 reveal"
+                className="mt-6 sm:mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 xl:gap-4 2xl:gap-5 reveal"
                 style={{ animationDelay: '60ms' }}
               >
                 <AmountTile

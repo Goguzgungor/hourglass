@@ -3,6 +3,10 @@
 import { useId } from 'react';
 
 type Props = {
+  /**
+   * Pixel size for the icon — only applied when `className` does not
+   * explicitly set `width`/`height` utilities. The aspect is 5:7 (100:140).
+   */
   size?: number;
   /** 0..1 — proportion of sand remaining in the upper bulb. */
   fill?: number;
@@ -16,6 +20,11 @@ type Props = {
  * When animated, a few small particles drift through the pinch point.
  *
  * Pure SVG + CSS — no JS animation loops.
+ *
+ * Two sizing modes:
+ *  - default: pass `size` (a px number) to lock to that visual size.
+ *  - responsive: pass `className="w-full h-auto"` (with the parent sized via
+ *    Tailwind) and the SVG will fill its container while preserving aspect.
  */
 export default function HourglassIcon({
   size = 64,
@@ -35,11 +44,14 @@ export default function HourglassIcon({
   const botFillHeight = 60 * (1 - clamped);
   const botFillY = 130 - botFillHeight;
 
+  // If a className requests width control, defer to it. Otherwise use `size`.
+  const usesResponsiveWidth = !!className && /\bw-/.test(className);
+
   return (
     <svg
       viewBox="0 0 100 140"
-      width={size}
-      height={size * 1.4}
+      width={usesResponsiveWidth ? undefined : size}
+      height={usesResponsiveWidth ? undefined : size * 1.4}
       className={className}
       aria-hidden="true"
       role="presentation"

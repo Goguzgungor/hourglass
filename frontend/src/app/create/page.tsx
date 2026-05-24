@@ -183,23 +183,23 @@ export default function CreateStreamPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-10 sm:pt-16 md:pt-24">
-      <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_420px] gap-x-8 lg:gap-x-10 gap-y-10 items-start">
-        <div className="max-w-[720px]">
+    <div className="mx-auto max-w-[1280px] xl:max-w-[1640px] 2xl:max-w-[1920px] px-4 sm:px-6 md:px-10 xl:px-16 2xl:px-24 pt-10 sm:pt-16 md:pt-24 xl:pt-28">
+      <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_480px] 2xl:grid-cols-[1fr_560px] gap-x-8 lg:gap-x-10 xl:gap-x-16 2xl:gap-x-20 gap-y-10 items-start">
+        <div className="max-w-[720px] xl:max-w-[860px] 2xl:max-w-[1000px]">
         {/* Eyebrow + headline */}
-        <p className="eyebrow mb-6 sm:mb-8">
+        <p className="eyebrow mb-6 sm:mb-8 xl:text-[0.78rem] 2xl:text-[0.85rem]">
           <span className="text-sand">·</span>{' '}
           <span className="ml-1">Stage 0</span>{' '}
           <span className="mx-2 text-stroke-2">/</span> Create a linear stream
         </p>
 
-        <h1 className="headline text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[5.5rem] text-cream">
+        <h1 className="headline text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[7rem] 2xl:text-[8.5rem] text-cream">
           Define the
           <br />
           <span className="text-sand-bright">schedule.</span>
         </h1>
 
-        <p className="mt-6 sm:mt-8 max-w-[540px] text-base sm:text-lg leading-relaxed text-cream-muted">
+        <p className="mt-6 sm:mt-8 xl:mt-10 max-w-[540px] xl:max-w-[640px] 2xl:max-w-[720px] text-base sm:text-lg xl:text-xl 2xl:text-2xl leading-relaxed text-cream-muted">
           Lock a SEP-41 asset and release it on a precise vesting curve. The
           recipient withdraws by the second.
         </p>
