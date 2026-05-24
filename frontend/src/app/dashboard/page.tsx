@@ -60,8 +60,8 @@ function streamedFraction(s: StreamDoc, nowSec: number): number {
 export default function DashboardPage(): ReactNode {
   const { address, pending } = useWallet();
   return (
-    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-16 sm:pt-24 pb-16">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 mb-10">
+    <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-10 sm:pt-16 md:pt-24 pb-16">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 mb-8 sm:mb-10">
         <p className="eyebrow">
           <span className="text-sand">·</span>{' '}
           <span className="ml-1">Dashboard</span>{' '}
@@ -85,17 +85,17 @@ export default function DashboardPage(): ReactNode {
 
 function DisconnectedView({ pending: _pending }: { pending: boolean }): ReactNode {
   return (
-    <div className="mt-20 mx-auto max-w-[560px] text-center">
-      <h1 className="headline text-5xl sm:text-6xl text-cream leading-[0.95]">
+    <div className="mt-12 sm:mt-20 mx-auto max-w-[560px] text-center">
+      <h1 className="headline text-4xl sm:text-5xl md:text-6xl text-cream leading-[0.95]">
         A ledger,
         <br />
         <span className="text-sand-bright">awaiting an owner.</span>
       </h1>
-      <p className="mt-8 text-cream-muted leading-relaxed">
+      <p className="mt-6 sm:mt-8 text-cream-muted leading-relaxed">
         Connect a wallet to see the streams you’ve sent and the streams flowing
         toward you.
       </p>
-      <div className="mt-10 flex justify-center">
+      <div className="mt-8 sm:mt-10 flex justify-center">
         <WalletButton />
       </div>
     </div>
@@ -174,7 +174,7 @@ function ConnectedView({ address }: { address: string }): ReactNode {
         </div>
       )}
 
-      <div className="mt-14 grid md:grid-cols-2 md:divide-x md:divide-stroke gap-y-12">
+      <div className="mt-10 sm:mt-14 grid md:grid-cols-2 md:divide-x md:divide-stroke gap-y-10 sm:gap-y-12">
         <Column
           label="Outgoing"
           subLabel="You are the sender"

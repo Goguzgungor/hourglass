@@ -112,6 +112,15 @@ body::before {
   background: var(--sand);
 }
 
+/* ---------- Hidden-scrollbar utility for touch-scrollable strips ---------- */
+.tab-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* ---------- Editorial label utility ---------- */
 .eyebrow {
   font-family: var(--font-geist-sans), system-ui, sans-serif;

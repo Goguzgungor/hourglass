@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono, Fraunces } from 'next/font/google';
 import Wordmark from '@/components/Wordmark';
 import WalletButton from '@/components/WalletButton';
+import MobileNav from '@/components/MobileNav';
 import Providers from '@/components/Providers';
 import './globals.css';
 
@@ -55,30 +56,30 @@ export default function RootLayout({
       <body className="bg-night text-cream antialiased min-h-dvh flex flex-col">
         <Providers>
           <header className="relative z-20">
-            <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-7 flex items-center justify-between">
+            <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-5 sm:pt-7 flex items-center justify-between gap-3">
               <Wordmark />
-              <nav className="flex items-center gap-7">
+              <nav className="flex items-center gap-4 md:gap-7">
                 <a
                   href="/create"
-                  className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
+                  className="hidden md:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
                 >
                   Create
                 </a>
                 <a
                   href="/dashboard"
-                  className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
+                  className="hidden md:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
                 >
                   Dashboard
                 </a>
                 <a
                   href="/#principles"
-                  className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
+                  className="hidden md:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
                 >
                   Principles
                 </a>
                 <a
                   href="/#surface"
-                  className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
+                  className="hidden md:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
                 >
                   Specification
                 </a>
@@ -86,19 +87,20 @@ export default function RootLayout({
                   href="https://github.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
+                  className="hidden md:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
                 >
                   Source
                 </a>
                 <WalletButton />
+                <MobileNav />
               </nav>
             </div>
           </header>
 
           <main className="flex-1 relative z-10">{children}</main>
 
-          <footer className="relative z-10 mt-32">
-            <div className="mx-auto max-w-[1280px] px-6 sm:px-10">
+          <footer className="relative z-10 mt-24 sm:mt-32">
+            <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10">
               <hr className="hairline" />
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-6 text-[11px] uppercase tracking-[0.18em] text-cream-dim">
                 <span>

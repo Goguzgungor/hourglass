@@ -183,23 +183,23 @@ export default function CreateStreamPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-16 sm:pt-24">
-      <div className="grid md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_420px] gap-x-10 gap-y-10 items-start">
+    <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-10 sm:pt-16 md:pt-24">
+      <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_420px] gap-x-8 lg:gap-x-10 gap-y-10 items-start">
         <div className="max-w-[720px]">
         {/* Eyebrow + headline */}
-        <p className="eyebrow mb-8">
+        <p className="eyebrow mb-6 sm:mb-8">
           <span className="text-sand">·</span>{' '}
           <span className="ml-1">Stage 0</span>{' '}
           <span className="mx-2 text-stroke-2">/</span> Create a linear stream
         </p>
 
-        <h1 className="headline text-[clamp(2.75rem,7vw,5.5rem)] text-cream">
+        <h1 className="headline text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[5.5rem] text-cream">
           Define the
           <br />
           <span className="text-sand-bright">schedule.</span>
         </h1>
 
-        <p className="mt-8 max-w-[540px] text-lg leading-relaxed text-cream-muted">
+        <p className="mt-6 sm:mt-8 max-w-[540px] text-base sm:text-lg leading-relaxed text-cream-muted">
           Lock a SEP-41 asset and release it on a precise vesting curve. The
           recipient withdraws by the second.
         </p>
@@ -208,7 +208,7 @@ export default function CreateStreamPage() {
           <NoDeploymentWarning />
         )}
 
-        <form className="mt-16 space-y-12" onSubmit={onSubmit} noValidate>
+        <form className="mt-10 sm:mt-16 space-y-10 sm:space-y-12" onSubmit={onSubmit} noValidate>
           {/* ---------------- 1. Token ---------------- */}
           <Field label="Token">
             <TokenPicker
@@ -243,7 +243,7 @@ export default function CreateStreamPage() {
           </Field>
 
           {/* ---------------- 4-6. Schedule ---------------- */}
-          <div className="grid sm:grid-cols-3 gap-x-6 gap-y-12">
+          <div className="grid sm:grid-cols-3 gap-x-6 gap-y-8 sm:gap-y-12">
             <Field label="Start">
               <input
                 type="datetime-local"
@@ -274,7 +274,7 @@ export default function CreateStreamPage() {
           </div>
 
           {/* ---------------- 7-8. Unlocks ---------------- */}
-          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-12">
+          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-8 sm:gap-y-12">
             <Field
               label="Unlock at start"
               hint="Lump sum released the instant the stream begins."

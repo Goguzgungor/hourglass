@@ -16,8 +16,11 @@ type Props = {
  */
 export default function TabBar({ tabs, active, onChange }: Props) {
   return (
-    <div role="tablist" className="relative border-b border-stroke">
-      <div className="flex gap-8">
+    <div
+      role="tablist"
+      className="relative border-b border-stroke overflow-x-auto tab-scroll -mx-4 sm:mx-0 px-4 sm:px-0"
+    >
+      <div className="flex gap-5 sm:gap-8 min-w-max">
         {tabs.map((t) => {
           const isActive = t.id === active;
           return (
@@ -28,7 +31,7 @@ export default function TabBar({ tabs, active, onChange }: Props) {
               aria-selected={isActive}
               onClick={() => onChange(t.id)}
               className={
-                'relative pb-3 pt-1 text-xs uppercase tracking-[0.18em] transition-colors ' +
+                'relative pb-3 pt-1 min-h-[44px] text-[11px] sm:text-xs uppercase tracking-[0.18em] whitespace-nowrap transition-colors ' +
                 (isActive
                   ? 'text-cream'
                   : 'text-cream-dim hover:text-cream-muted')

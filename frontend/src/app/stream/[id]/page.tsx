@@ -637,7 +637,7 @@ function LoadedStream({
   }, [status, startTs, endTs, duration]);
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-10 sm:pt-16 pb-16">
+    <div className="mx-auto max-w-[1280px] px-4 sm:px-6 md:px-10 pt-8 sm:pt-12 md:pt-16 pb-16">
       {/* Eyebrow + Status */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5">
         <p className="eyebrow">
@@ -652,13 +652,13 @@ function LoadedStream({
       </div>
 
       {/* Title */}
-      <h1 className="headline text-[clamp(2.25rem,5.5vw,4.5rem)] text-cream">
+      <h1 className="headline text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-cream break-words">
         Streaming {formatStroops(deposited)}
-        <span className="ml-3 font-mono text-base text-cream-dim uppercase tracking-[0.18em] not-italic">
+        <span className="ml-3 font-mono text-sm sm:text-base text-cream-dim uppercase tracking-[0.18em] not-italic">
           XLM
         </span>
       </h1>
-      <p className="mt-4 max-w-[760px] text-[15px] leading-relaxed text-cream-muted">
+      <p className="mt-4 max-w-[760px] text-sm sm:text-[15px] leading-relaxed text-cream-muted break-words">
         from{' '}
         <CopyableAddress addr={stream.sender} />
         {' '}to{' '}
@@ -667,7 +667,7 @@ function LoadedStream({
       </p>
 
       {/* Two-column layout */}
-      <div className="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12">
+      <div className="mt-10 sm:mt-12 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-10 lg:gap-12">
         {/* LEFT: dial + actions + tabs */}
         <section>
           <div className="reveal">
@@ -772,7 +772,7 @@ function LoadedStream({
             {/* Tab content */}
             {activeTab === 'stream' && (
               <div
-                className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 reveal"
+                className="mt-6 sm:mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 reveal"
                 style={{ animationDelay: '60ms' }}
               >
                 <AmountTile
@@ -845,18 +845,18 @@ function LoadedStream({
                       {stream.shape.values[0].tranches.map((t, i) => (
                         <li
                           key={i}
-                          className="grid grid-cols-[28px_1fr_180px] items-baseline gap-x-4 py-3 border-b border-stroke/40 last:border-b-0"
+                          className="grid grid-cols-[28px_1fr] sm:grid-cols-[28px_1fr_180px] items-baseline gap-x-4 gap-y-1 py-3 border-b border-stroke/40 last:border-b-0"
                         >
                           <span className="font-mono text-xs text-cream-dim tabular">
                             #{i + 1}
                           </span>
-                          <span className="font-mono text-sm text-sand-bright tabular">
+                          <span className="font-mono text-sm text-sand-bright tabular break-words">
                             +{formatStroops(BigInt(t.amount))}{' '}
                             <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim ml-1">
                               XLM
                             </span>
                           </span>
-                          <span className="font-mono text-xs text-cream-dim text-right">
+                          <span className="font-mono text-xs text-cream-dim col-start-2 sm:col-start-3 text-left sm:text-right">
                             {formatTimestamp(Number(t.ts))}
                           </span>
                         </li>
@@ -905,7 +905,7 @@ function LoadedStream({
 
             {activeTab === 'nft' && (
               <div
-                className="mt-8 grid grid-cols-1 md:grid-cols-[1fr_360px] gap-12 reveal"
+                className="mt-6 sm:mt-8 grid grid-cols-1 md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_360px] gap-10 lg:gap-12 reveal"
                 style={{ animationDelay: '60ms' }}
               >
                 {/* LEFT: explanation + transfer form */}
@@ -1072,7 +1072,7 @@ function LoadedStream({
                 </div>
 
                 {/* RIGHT: NFT receipt visualization */}
-                <div>
+                <div className="mx-auto md:mx-0 w-full max-w-[320px]">
                   <NFTReceiptCard
                     streamId={streamId}
                     owner={nftOwner}
@@ -1095,7 +1095,7 @@ function LoadedStream({
 
         {/* RIGHT: sticky attribute panel */}
         <aside className="lg:sticky lg:top-24 self-start">
-          <div className="border-l border-stroke pl-6">
+          <div className="border-t lg:border-t-0 lg:border-l border-stroke pt-6 lg:pt-0 lg:pl-6">
             <p className="eyebrow text-cream-dim mb-4">Receipt</p>
             <AttributePill
               label="Shape"
@@ -1628,7 +1628,7 @@ function EventsLog({ streamId }: { streamId: number }) {
       {events.map((ev) => (
         <li
           key={ev.id}
-          className="relative pl-7 py-3 grid grid-cols-[1fr_180px] items-baseline gap-x-4"
+          className="relative pl-7 py-3 grid grid-cols-1 sm:grid-cols-[1fr_180px] items-baseline gap-x-4 gap-y-1"
         >
           <span
             aria-hidden
@@ -1642,12 +1642,12 @@ function EventsLog({ streamId }: { streamId: number }) {
               {ev.kind}
             </p>
             {ev.details && (
-              <p className="mt-1 font-mono text-xs text-cream-muted">
+              <p className="mt-1 font-mono text-xs text-cream-muted break-words">
                 → {ev.details}
               </p>
             )}
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right">
             <p className="font-mono text-xs text-cream-dim">
               {new Date(ev.ts).toLocaleString(undefined, {
                 month: 'short',

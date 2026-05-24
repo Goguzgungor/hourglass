@@ -61,7 +61,7 @@ export default function WalletButton() {
         aria-label="Connect wallet"
         className="
           group inline-flex items-center gap-2 border border-stroke
-          px-4 py-2 text-[11px] uppercase tracking-[0.18em] text-cream
+          px-3 sm:px-4 min-h-[40px] text-[11px] uppercase tracking-[0.18em] text-cream
           hover:border-sand hover:text-sand-bright
           transition-colors duration-200 rounded-none
           disabled:opacity-60
@@ -84,7 +84,7 @@ export default function WalletButton() {
         aria-expanded={open}
         title={address}
         className={
-          'group inline-flex items-center gap-2 border px-4 py-2 text-[11px] text-cream ' +
+          'group inline-flex items-center gap-2 border px-3 sm:px-4 min-h-[40px] text-[11px] text-cream ' +
           'transition-colors duration-200 rounded-none ' +
           (open
             ? 'border-sand bg-sand/10'
@@ -119,29 +119,17 @@ export default function WalletButton() {
           aria-label="Wallet"
           className="
             absolute right-0 top-full mt-2 z-50 w-[320px]
+            max-w-[calc(100vw-2rem)]
             bg-midnight border border-stroke
             shadow-[0_18px_60px_-12px_rgba(0,0,0,0.6)]
           "
         >
-          {/* Header */}
-          <div className="px-5 pt-4 pb-3 border-b border-stroke/60">
+          {/* Address + copy */}
+          <div className="px-5 pt-4 pb-4 border-b border-stroke/60">
             <p className="eyebrow text-cream-dim text-[10px]">
               <span className="text-sand">·</span> Wallet
             </p>
-            <p className="mt-2 font-fraunces italic text-cream text-base leading-tight">
-              Connected.
-            </p>
-            <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-cream-dim">
-              {networkLabel(DEPLOYMENT.networkPassphrase)}
-            </p>
-          </div>
-
-          {/* Address + copy */}
-          <div className="px-5 py-4 border-b border-stroke/60">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-cream-dim">
-              Address
-            </p>
-            <div className="mt-2 flex items-start gap-3">
+            <div className="mt-3 flex items-start gap-3">
               <p className="font-mono text-[11px] leading-snug text-cream break-all flex-1">
                 {address}
               </p>
@@ -211,14 +199,6 @@ export default function WalletButton() {
       )}
     </div>
   );
-}
-
-function networkLabel(passphrase?: string): string {
-  if (!passphrase) return 'Network: unknown';
-  if (passphrase.includes('Public Global Stellar')) return 'Stellar · Mainnet';
-  if (passphrase.includes('Test SDF')) return 'Stellar · Testnet';
-  if (passphrase.includes('Standalone')) return 'Stellar · Local';
-  return passphrase;
 }
 
 /* ---------- icons (inline, ~12px) ---------- */

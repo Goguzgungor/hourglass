@@ -42,7 +42,7 @@ export default function ScheduleTimeline({
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-sm border border-stroke bg-gradient-to-br from-midnight to-night/80 px-4 py-4"
+      className="relative w-full overflow-hidden rounded-sm border border-stroke bg-gradient-to-br from-midnight to-night/80 px-3 sm:px-4 py-4"
       style={{ height }}
     >
       <svg
@@ -188,9 +188,9 @@ export default function ScheduleTimeline({
       </svg>
 
       {/* DOM-layer timestamps (kept in HTML so locale formatting is sharp) */}
-      <div className="pointer-events-none absolute inset-x-4 bottom-2 flex justify-between font-mono text-[10px] text-cream-dim">
-        <span>{formatTimestamp(start_ts)}</span>
-        <span>{formatTimestamp(end_ts)}</span>
+      <div className="pointer-events-none absolute inset-x-3 sm:inset-x-4 bottom-2 flex justify-between gap-2 font-mono text-[9px] sm:text-[10px] text-cream-dim">
+        <span className="truncate max-w-[45%]">{formatTimestamp(start_ts)}</span>
+        <span className="truncate max-w-[45%] text-right">{formatTimestamp(end_ts)}</span>
       </div>
     </div>
   );
