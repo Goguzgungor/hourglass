@@ -21,13 +21,29 @@ const frontendRoot = resolve(__dirname, '..');
 
 /* ---------- 1. Deployment manifest ---------- */
 {
-  const network = process.env.DEPLOY_NETWORK || 'local';
-  const src = resolve(repoRoot, `deployments/${network}.json`);
+  // Resolution order:
+  //   1. explicit DEPLOY_NETWORK env var
+  //   2. testnet.json (if it exists — preferred default for dev)
+  //   3. local.json (quickstart docker)
+  //   4. placeholder
+  const candidates = process.env.DEPLOY_NETWORK
+    ? [process.env.DEPLOY_NETWORK]
+    : ['testnet', 'local'];
+  let network = candidates[candidates.length - 1];
+  let src = '';
+  for (const candidate of candidates) {
+    const candidateSrc = resolve(repoRoot, `deployments/${candidate}.json`);
+    if (existsSync(candidateSrc)) {
+      network = candidate;
+      src = candidateSrc;
+      break;
+    }
+  }
   const dst = resolve(frontendRoot, 'src/lib/deployment.json');
   await mkdir(dirname(dst), { recursive: true });
-  if (existsSync(src)) {
+  if (src) {
     await writeFile(dst, await readFile(src));
-    console.log(`[sync-deployment] copied ${src} -> ${dst}`);
+    console.log(`[sync-deployment] copied ${src} -> ${dst} (network=${network})`);
   } else {
     await writeFile(
       dst,
