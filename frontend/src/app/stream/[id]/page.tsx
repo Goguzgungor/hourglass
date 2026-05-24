@@ -21,11 +21,13 @@ import {
 } from '@/lib/format';
 import type { Stream, StreamStatus } from 'hourglass/lockup';
 
-import StreamRiver from '@/components/StreamRiver';
+import CelestialDial from '@/components/CelestialDial';
+import EmissionChart from '@/components/EmissionChart';
+import TabBar from '@/components/TabBar';
+import DialActionGrid from '@/components/DialActionGrid';
+import AttributePill from '@/components/AttributePill';
 import ScheduleTimeline from '@/components/ScheduleTimeline';
 import AmountTile from '@/components/AmountTile';
-import LiveCounter from '@/components/LiveCounter';
-import WithdrawButton from '@/components/WithdrawButton';
 import StatusPill, { type StreamStatusTag } from '@/components/StatusPill';
 
 /* ----------------------------------------------------------------- *
@@ -40,6 +42,176 @@ function statusTag(s: StreamStatus): Status {
 
 function shapeLabel(s: Stream): 'LINEAR' | 'TRANCHED' {
   return s.shape.tag === 'Linear' ? 'LINEAR' : 'TRANCHED';
+}
+
+/* ----------------------------------------------------------------- *
+ * Inline icons (no extra dependency)                                *
+ * ----------------------------------------------------------------- */
+
+function IconWithdraw() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 4v12m0 0l-5-5m5 5l5-5M5 20h14"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconCancel() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M5 5l14 14M19 5L5 19"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconRenounce() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9.5-4.6-1.2-8-5-8-9.5V7l8-4z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 5l14 14"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconTransfer() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 11h13m0 0l-4-4m4 4l-4 4M21 13H8m0 0l4-4m-4 4l4 4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconAtSign() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M16 12v1.5a2.5 2.5 0 005 0V12a9 9 0 10-3.5 7.1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconClock() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M12 7v5l3 2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconShape() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 18L11 7l5 6 5-7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconCoin() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M9 9h4a2 2 0 010 4h-4m0-4v6m0-2h5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconHash() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M5 9h14M5 15h14M10 4l-2 16M16 4l-2 16"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconDeposit() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 3v9m0 0l-3-3m3 3l3-3M5 16v3a2 2 0 002 2h10a2 2 0 002-2v-3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconCheck({ value }: { value: boolean }) {
+  return value ? (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M5 12l5 5L20 7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ) : (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 6l12 12M18 6L6 18"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 /* ----------------------------------------------------------------- *
@@ -65,7 +237,7 @@ export default function StreamPage({
 }
 
 /* ----------------------------------------------------------------- *
- * Detail view                                                      *
+ * Detail view (data + polling)                                     *
  * ----------------------------------------------------------------- */
 
 function StreamDetail({ streamId }: { streamId: number }) {
@@ -152,6 +324,13 @@ function StreamDetail({ streamId }: { streamId: number }) {
  * Loaded view                                                      *
  * ----------------------------------------------------------------- */
 
+type TabId = 'stream' | 'schedule' | 'emission' | 'events';
+const TAB_IDS: TabId[] = ['stream', 'schedule', 'emission', 'events'];
+
+function isTabId(v: string): v is TabId {
+  return (TAB_IDS as readonly string[]).includes(v);
+}
+
 function LoadedStream({
   streamId,
   stream,
@@ -187,10 +366,8 @@ function LoadedStream({
   const withdrawn = BigInt(stream.withdrawn);
   const refunded = BigInt(stream.refunded);
   const streamed = withdrawn + withdrawable;
-  const remaining = deposited - withdrawn - refunded;
 
-  // Per-second rate (stroops/sec), used by LiveCounter for interpolation.
-  // For linear streams: deposited / (end_ts - cliff_ts).
+  // Per-second rate (stroops/sec).
   const ratePerSec = useMemo(() => {
     if (status !== 'STREAMING') return 0n;
     const rateDenom =
@@ -201,12 +378,11 @@ function LoadedStream({
     return deposited / BigInt(rateDenom);
   }, [deposited, endTs, cliffTs, startTs, stream.shape.tag, status]);
 
-  // Upper bound for the live counter: never project beyond what is owed.
-  const counterTarget = deposited - withdrawn;
-
   const [pendingAction, setPendingAction] = useState<
-    null | 'withdraw' | 'cancel' | 'renounce'
+    null | 'withdraw' | 'cancel' | 'renounce' | 'transfer'
   >(null);
+
+  /* ---------- mutations ---------- */
 
   const callWithdraw = async () => {
     if (!isRecipient) return;
@@ -282,19 +458,95 @@ function LoadedStream({
     }
   };
 
-  const canWithdraw = isRecipient && withdrawable > 0n;
+  const [transferModal, setTransferModal] = useState(false);
+  const [transferTo, setTransferTo] = useState('');
+  const callTransfer = async () => {
+    if (!isRecipient) return;
+    setPendingAction('transfer');
+    try {
+      const lockup = makeLockup(address) as unknown as {
+        withdraw_max_and_transfer: (args: {
+          stream_id: number;
+          new_recipient: string;
+        }) => Promise<{ signAndSend: () => Promise<unknown> }>;
+      };
+      const tx = await lockup.withdraw_max_and_transfer({
+        stream_id: streamId,
+        new_recipient: transferTo.trim(),
+      });
+      await tx.signAndSend();
+      toast.push({
+        kicker: `Stream #${streamId} / transferred`,
+        message: `Recipient set to ${truncAddress(transferTo.trim())}.`,
+      });
+      setTransferModal(false);
+      setTransferTo('');
+      await reload();
+    } catch (e) {
+      console.error(e);
+      toast.push({
+        kicker: 'Transfer failed',
+        message: (e as Error).message,
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  /* ---------- gating ---------- */
+
+  const canWithdraw = isRecipient && withdrawable > 0n && pendingAction === null;
   const canCancel =
     isSender &&
     (status === 'PENDING' || status === 'STREAMING') &&
-    stream.is_cancelable;
-  const canRenounce = isSender && stream.is_cancelable;
+    stream.is_cancelable &&
+    pendingAction === null;
+  const canRenounce = isSender && stream.is_cancelable && pendingAction === null;
+  const canTransfer = isRecipient && stream.is_transferable && pendingAction === null;
 
   const isCanceled = status === 'CANCELED' || stream.was_canceled === true;
   const isDepleted = status === 'DEPLETED' || stream.is_depleted === true;
 
+  /* ---------- tabs + url hash ---------- */
+
+  const [activeTab, setActiveTab] = useState<TabId>('stream');
+  // On mount, read hash.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const h = window.location.hash.replace(/^#/, '');
+    if (isTabId(h)) setActiveTab(h);
+  }, []);
+  const onTabChange = (id: string) => {
+    if (!isTabId(id)) return;
+    setActiveTab(id);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.hash = id;
+      window.history.replaceState(null, '', url.toString());
+    }
+  };
+
+  /* ---------- subhead ---------- */
+
+  const subheadEnding = useMemo(() => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (status === 'PENDING' && startTs > nowSec) {
+      return ` · begins in ${formatDuration(startTs - nowSec)}`;
+    }
+    if (status === 'STREAMING' && endTs > nowSec) {
+      return ` · ends in ${formatDuration(endTs - nowSec)}`;
+    }
+    if (status === 'SETTLED') {
+      return ' · stream completed';
+    }
+    if (status === 'CANCELED') return ' · canceled';
+    if (status === 'DEPLETED') return ' · depleted';
+    return ` · ${formatDuration(duration)} total`;
+  }, [status, startTs, endTs, duration]);
+
   return (
     <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-10 sm:pt-16 pb-16">
-      {/* Status row */}
+      {/* Eyebrow + Status */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5">
         <p className="eyebrow">
           <span className="text-sand">·</span>{' '}
@@ -302,10 +554,12 @@ function LoadedStream({
           <span className="mx-2 text-stroke-2">/</span>
           {shapeLabel(stream)}
         </p>
-        <StatusPill status={status} />
+        <span className="ml-auto">
+          <StatusPill status={status} />
+        </span>
       </div>
 
-      {/* Headline */}
+      {/* Title */}
       <h1 className="headline text-[clamp(2.25rem,5.5vw,4.5rem)] text-cream">
         Streaming {formatStroops(deposited)}
         <span className="ml-3 font-mono text-base text-cream-dim uppercase tracking-[0.18em] not-italic">
@@ -317,200 +571,385 @@ function LoadedStream({
         <CopyableAddress addr={stream.sender} />
         {' '}to{' '}
         <CopyableAddress addr={stream.recipient} />
-        {' '}over {formatDuration(duration)}.
+        <span className="text-cream-dim">{subheadEnding}</span>
       </p>
 
-      {/* Headline banner — StreamRiver */}
-      <div className="mt-10 reveal">
-        <StreamRiver
-          start_ts={startTs}
-          cliff_ts={cliffTs}
-          end_ts={endTs}
-          deposited={deposited}
-          withdrawn={withdrawn}
-          withdrawable={withdrawable}
-          refunded={refunded}
-          is_canceled={isCanceled}
-          is_depleted={isDepleted}
-        />
-      </div>
+      {/* Two-column layout */}
+      <div className="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12">
+        {/* LEFT: dial + actions + tabs */}
+        <section>
+          <div className="reveal">
+            <CelestialDial
+              deposited={deposited}
+              withdrawn={withdrawn}
+              withdrawable={withdrawable}
+              refunded={refunded}
+              start_ts={startTs}
+              cliff_ts={hasCliff ? cliffTs : startTs}
+              end_ts={endTs}
+              status={status}
+              rate={ratePerSec}
+              lastUpdateMs={withdrawableTs}
+              tokenSymbol="XLM"
+            />
+          </div>
 
-      {/* Stats grid */}
-      <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 reveal" style={{ animationDelay: '80ms' }}>
-        <AmountTile
-          label="Deposited"
-          amount={formatStroops(deposited)}
-          accent="cream"
-          tooltip="Total amount locked when the stream was created."
-        />
-        <AmountTile
-          label="Streamed"
-          amount={formatStroops(streamed)}
-          accent="sand"
-          tooltip="What has unlocked so far, including already-withdrawn funds."
-        />
-        <AmountTile
-          label="Withdrawable now"
-          amount={formatStroops(withdrawable)}
-          accent="teal"
-          pulse
-          tooltip="Available for the recipient to claim right now."
-        />
-        <AmountTile
-          label="Withdrawn"
-          amount={formatStroops(withdrawn)}
-          accent="cream-muted"
-          tooltip="What the recipient has already pulled from the stream."
-        />
-        {refunded > 0n && (
-          <AmountTile
-            label="Refunded"
-            amount={formatStroops(refunded)}
-            accent="rose"
-            tooltip="Returned to the sender after a cancelation."
-          />
-        )}
-      </div>
+          {/* Withdraw context line — only when recipient + can't withdraw. */}
+          {isRecipient && withdrawable === 0n && status === 'STREAMING' && (
+            <p className="mt-6 text-center text-[11px] uppercase tracking-[0.18em] text-cream-dim">
+              Nothing to claim yet
+            </p>
+          )}
 
-      {/* Schedule timeline */}
-      <div className="mt-8 reveal" style={{ animationDelay: '120ms' }}>
-        <ScheduleTimeline
-          start_ts={startTs}
-          cliff_ts={hasCliff ? cliffTs : startTs}
-          end_ts={endTs}
-        />
-      </div>
+          <div className="mt-8 reveal" style={{ animationDelay: '80ms' }}>
+            <DialActionGrid
+              actions={[
+                {
+                  id: 'withdraw',
+                  label: 'Withdraw',
+                  icon: <IconWithdraw />,
+                  enabled: canWithdraw,
+                  primary: true,
+                  loading: pendingAction === 'withdraw',
+                  onClick: callWithdraw,
+                  tooltip: canWithdraw
+                    ? `Claim ${formatStroops(withdrawable)} XLM`
+                    : isRecipient
+                      ? 'Nothing to claim yet'
+                      : 'Recipient only',
+                },
+                {
+                  id: 'cancel',
+                  label: 'Cancel',
+                  icon: <IconCancel />,
+                  enabled: canCancel,
+                  loading: pendingAction === 'cancel',
+                  onClick: callCancel,
+                  tooltip: canCancel ? 'Stop streaming, refund the rest to sender' : 'Sender only',
+                },
+                {
+                  id: 'renounce',
+                  label: 'Renounce',
+                  icon: <IconRenounce />,
+                  enabled: canRenounce,
+                  loading: pendingAction === 'renounce',
+                  onClick: () => setRenounceModal(true),
+                  tooltip: canRenounce ? 'Permanently remove cancelability' : 'Sender only',
+                },
+                {
+                  id: 'transfer',
+                  label: 'Transfer',
+                  icon: <IconTransfer />,
+                  enabled: canTransfer,
+                  loading: pendingAction === 'transfer',
+                  onClick: () => setTransferModal(true),
+                  tooltip: canTransfer ? 'Send the NFT receipt to a new recipient' : 'Recipient only',
+                },
+              ]}
+            />
+          </div>
 
-      {/* Live counter + Withdraw */}
-      <section className="mt-12 grid md:grid-cols-12 gap-y-6 md:gap-x-10 items-end">
-        <div className="md:col-span-7">
-          <p className="eyebrow text-cream-dim mb-3">· Available to claim</p>
-          <LiveCounter
-            currentValue={withdrawable}
-            targetValue={counterTarget > 0n ? counterTarget : withdrawable}
-            rate={ratePerSec}
-            lastUpdateMs={withdrawableTs}
-            format={(n) => formatStroops(n)}
-          />
-          <p className="mt-3 font-mono text-xs text-cream-dim flex items-center gap-2">
-            <span className="text-teal-bright">+</span>
-            {formatStroops(ratePerSec)}{' '}
-            <span className="uppercase tracking-[0.18em] text-cream-dim/80">
-              XLM / sec
-            </span>
-            {status === 'STREAMING' && (
-              <>
-                <span className="text-stroke-2">·</span>
-                <span className="inline-flex items-center gap-1.5 text-teal-bright">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inset-0 bg-teal-bright rounded-full animate-ping opacity-60" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-teal-bright" />
-                  </span>
-                  Live
-                </span>
-              </>
+          {/* Tabs */}
+          <div className="mt-12">
+            <TabBar
+              tabs={[
+                { id: 'stream', label: 'Stream' },
+                { id: 'schedule', label: 'Schedule' },
+                { id: 'emission', label: 'Emission' },
+                { id: 'events', label: 'Events' },
+              ]}
+              active={activeTab}
+              onChange={onTabChange}
+            />
+
+            {/* Tab content */}
+            {activeTab === 'stream' && (
+              <div
+                className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 reveal"
+                style={{ animationDelay: '60ms' }}
+              >
+                <AmountTile
+                  label="Deposited"
+                  amount={formatStroops(deposited)}
+                  accent="cream"
+                  tooltip="Total amount locked when the stream was created."
+                />
+                <AmountTile
+                  label="Streamed"
+                  amount={formatStroops(streamed)}
+                  accent="sand"
+                  tooltip="What has unlocked so far, including already-withdrawn funds."
+                />
+                <AmountTile
+                  label="Withdrawable"
+                  amount={formatStroops(withdrawable)}
+                  accent={isCanceled ? 'rose' : 'teal'}
+                  pulse
+                  tooltip="Available for the recipient to claim right now."
+                />
+                <AmountTile
+                  label="Withdrawn"
+                  amount={formatStroops(withdrawn)}
+                  accent="cream-muted"
+                  tooltip="What the recipient has already pulled from the stream."
+                />
+                {refunded > 0n && (
+                  <AmountTile
+                    label="Refunded"
+                    amount={formatStroops(refunded)}
+                    accent="rose"
+                    tooltip="Returned to the sender after a cancelation."
+                  />
+                )}
+              </div>
             )}
-          </p>
-        </div>
-        <div className="md:col-span-5 flex md:justify-end">
-          <WithdrawButton
-            variant="primary"
-            disabled={!canWithdraw || pendingAction !== null}
-            loading={pendingAction === 'withdraw'}
-            onClick={callWithdraw}
-          >
-            {canWithdraw
-              ? `Withdraw ${formatStroops(withdrawable)} XLM →`
-              : isRecipient
-                ? 'Nothing to withdraw yet'
-                : 'Recipient only'}
-          </WithdrawButton>
-        </div>
-      </section>
 
-      {/* Metadata grid */}
-      <section className="mt-16 border-t border-stroke pt-10">
-        <p className="eyebrow text-cream-dim mb-6">· Receipt</p>
-        <div className="grid md:grid-cols-2 gap-x-12 gap-y-0">
-          <Meta label="Sender">
-            <CopyableAddress addr={stream.sender} />
-          </Meta>
-          <Meta label="Recipient">
-            <CopyableAddress addr={stream.recipient} />
-          </Meta>
-          <Meta label="Token">
-            <span className="font-mono text-xs text-cream-dim break-all">
-              {truncAddress(stream.token)}
-            </span>
-          </Meta>
-          <Meta label="Stream ID">
-            <span className="font-mono text-xs text-cream">#{streamId}</span>
-          </Meta>
-          <Meta label="Start">
-            <span className="font-mono text-xs text-cream">
-              {formatTimestamp(startTs)}
-            </span>
-          </Meta>
-          <Meta label="End">
-            <span className="font-mono text-xs text-cream">
-              {formatTimestamp(endTs)}
-            </span>
-          </Meta>
-          <Meta label="Cliff">
-            <span className="font-mono text-xs text-cream">
-              {hasCliff ? formatTimestamp(cliffTs) : '— (no cliff)'}
-            </span>
-          </Meta>
-          <Meta label="Duration">
-            <span className="font-mono text-xs text-cream">
-              {formatDuration(duration)}
-            </span>
-          </Meta>
-          <Meta label="Cancelable">
-            <Yesno value={stream.is_cancelable} />
-          </Meta>
-          <Meta label="Transferable" last>
-            <Yesno value={stream.is_transferable} />
-          </Meta>
-        </div>
-      </section>
+            {activeTab === 'schedule' && (
+              <div className="mt-8 reveal" style={{ animationDelay: '60ms' }}>
+                <ScheduleTimeline
+                  start_ts={startTs}
+                  cliff_ts={hasCliff ? cliffTs : startTs}
+                  end_ts={endTs}
+                />
+                <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-0">
+                  <DateCell label="Started" ts={startTs} accent="sand" />
+                  <DateCell
+                    label="Cliff"
+                    ts={hasCliff ? cliffTs : null}
+                    accent="violet"
+                  />
+                  <DateCell label="Ends" ts={endTs} accent="cream-muted" />
+                </div>
+                <div className="mt-8 pt-6 border-t border-stroke/40 flex items-baseline gap-3 flex-wrap">
+                  <p className="eyebrow text-cream-dim">Duration</p>
+                  <p className="font-display italic text-3xl text-cream">
+                    {formatDuration(duration)}
+                  </p>
+                  {hasCliff && (
+                    <p className="font-mono text-xs text-cream-dim">
+                      +{formatDuration(cliffTs - startTs)} cliff
+                    </p>
+                  )}
+                </div>
+                {stream.shape.tag === 'Tranched' && (
+                  <div className="mt-8 pt-6 border-t border-stroke/40">
+                    <p className="eyebrow text-cream-dim mb-4">Tranches</p>
+                    <ul className="space-y-0">
+                      {stream.shape.values[0].tranches.map((t, i) => (
+                        <li
+                          key={i}
+                          className="grid grid-cols-[28px_1fr_180px] items-baseline gap-x-4 py-3 border-b border-stroke/40 last:border-b-0"
+                        >
+                          <span className="font-mono text-xs text-cream-dim tabular">
+                            #{i + 1}
+                          </span>
+                          <span className="font-mono text-sm text-sand-bright tabular">
+                            +{formatStroops(BigInt(t.amount))}{' '}
+                            <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim ml-1">
+                              XLM
+                            </span>
+                          </span>
+                          <span className="font-mono text-xs text-cream-dim text-right">
+                            {formatTimestamp(Number(t.ts))}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
-      {/* Sender actions */}
-      {isSender && (
-        <section className="mt-16 border-t border-stroke pt-10">
-          <p className="eyebrow text-cream-dim mb-6">· Sender actions</p>
-          <div className="flex flex-col md:flex-row gap-3">
-            <WithdrawButton
-              variant="danger"
-              fullWidthMobile
-              disabled={!canCancel || pendingAction !== null}
-              loading={pendingAction === 'cancel'}
-              onClick={callCancel}
-            >
-              Cancel stream
-            </WithdrawButton>
-            <WithdrawButton
-              variant="secondary"
-              fullWidthMobile
-              disabled={!canRenounce || pendingAction !== null}
-              loading={pendingAction === 'renounce'}
-              onClick={() => setRenounceModal(true)}
-            >
-              Renounce cancelability
-            </WithdrawButton>
+            {activeTab === 'emission' && (
+              <div className="mt-8 reveal" style={{ animationDelay: '60ms' }}>
+                <EmissionChart
+                  model={stream.shape.tag === 'Linear' ? 'Linear' : 'Tranched'}
+                  start_ts={startTs}
+                  cliff_ts={hasCliff ? cliffTs : undefined}
+                  end_ts={endTs}
+                  deposited={deposited}
+                  unlock_at_start={
+                    stream.shape.tag === 'Linear'
+                      ? BigInt(stream.shape.values[0].unlock_at_start)
+                      : 0n
+                  }
+                  unlock_at_cliff={
+                    stream.shape.tag === 'Linear'
+                      ? BigInt(stream.shape.values[0].unlock_at_cliff)
+                      : 0n
+                  }
+                  tranches={
+                    stream.shape.tag === 'Tranched'
+                      ? stream.shape.values[0].tranches.map((t) => ({
+                          amount: BigInt(t.amount),
+                          ts: Number(t.ts),
+                        }))
+                      : []
+                  }
+                  tokenSymbol="XLM"
+                />
+                <p className="mt-4 font-mono text-xs text-cream-dim">
+                  <span className="text-teal-bright">+</span>
+                  {formatStroops(ratePerSec)} XLM
+                  <span className="ml-2 uppercase tracking-[0.18em]">per second</span>
+                </p>
+              </div>
+            )}
+
+            {activeTab === 'events' && (
+              <div className="mt-8 reveal" style={{ animationDelay: '60ms' }}>
+                <EventsLog streamId={streamId} />
+              </div>
+            )}
           </div>
         </section>
-      )}
+
+        {/* RIGHT: sticky attribute panel */}
+        <aside className="lg:sticky lg:top-24 self-start">
+          <div className="border-l border-stroke pl-6">
+            <p className="eyebrow text-cream-dim mb-4">Receipt</p>
+            <AttributePill
+              label="Shape"
+              icon={<IconShape />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  {shapeLabel(stream) === 'LINEAR' ? 'Linear' : 'Tranched'}
+                </span>
+              }
+            />
+            <AttributePill
+              label="Status"
+              icon={<IconClock />}
+              value={<StatusPill status={status} size="sm" />}
+            />
+            <AttributePill
+              label="Sender"
+              icon={<IconAtSign />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  {truncAddress(stream.sender)}
+                </span>
+              }
+              copyable={stream.sender}
+            />
+            <AttributePill
+              label="Recipient"
+              icon={<IconAtSign />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  {truncAddress(stream.recipient)}
+                </span>
+              }
+              copyable={stream.recipient}
+            />
+            <AttributePill
+              label="Token"
+              icon={<IconCoin />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  {truncAddress(stream.token)}
+                </span>
+              }
+              copyable={stream.token}
+            />
+            <AttributePill
+              label="Started"
+              icon={<IconClock />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  {formatTimestamp(startTs)}
+                </span>
+              }
+            />
+            <AttributePill
+              label="Cliff"
+              icon={<IconClock />}
+              value={
+                hasCliff ? (
+                  <span className="font-mono text-sm text-violet">
+                    {formatTimestamp(cliffTs)}
+                  </span>
+                ) : (
+                  <span className="font-mono text-sm text-cream-dim">—</span>
+                )
+              }
+              accent={hasCliff ? 'violet' : undefined}
+            />
+            <AttributePill
+              label="Ends"
+              icon={<IconClock />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  {formatTimestamp(endTs)}
+                </span>
+              }
+            />
+            <AttributePill
+              label="Deposited"
+              icon={<IconDeposit />}
+              value={
+                <span className="text-cream">
+                  <span className="font-display italic text-base">
+                    {formatStroops(deposited)}
+                  </span>
+                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.18em] text-cream-dim">
+                    XLM
+                  </span>
+                </span>
+              }
+            />
+            <AttributePill
+              label="Cancelable"
+              value={
+                <span
+                  className={
+                    'inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] ' +
+                    (stream.is_cancelable
+                      ? 'text-teal-bright'
+                      : 'text-cream-dim')
+                  }
+                >
+                  <IconCheck value={stream.is_cancelable} />
+                  {stream.is_cancelable ? 'Yes' : 'No'}
+                </span>
+              }
+            />
+            <AttributePill
+              label="Transferable"
+              value={
+                <span
+                  className={
+                    'inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] ' +
+                    (stream.is_transferable
+                      ? 'text-teal-bright'
+                      : 'text-cream-dim')
+                  }
+                >
+                  <IconCheck value={stream.is_transferable} />
+                  {stream.is_transferable ? 'Yes' : 'No'}
+                </span>
+              }
+            />
+            <AttributePill
+              label="Stream ID"
+              icon={<IconHash />}
+              value={
+                <span className="font-mono text-sm text-cream">
+                  #{streamId}
+                </span>
+              }
+            />
+          </div>
+        </aside>
+      </div>
 
       {!address && (
-        <p className="mt-6 text-xs text-cream-dim">
+        <p className="mt-12 text-xs text-cream-dim">
           Connect a wallet to interact with this stream.
         </p>
       )}
 
-      {/* Activity */}
-      <EventsLog streamId={streamId} />
-
+      {/* Modals */}
       {renounceModal && (
         <Modal onDismiss={() => setRenounceModal(false)}>
           <p className="eyebrow text-warning mb-3">· Confirm</p>
@@ -539,6 +978,44 @@ function LoadedStream({
           </div>
         </Modal>
       )}
+
+      {transferModal && (
+        <Modal onDismiss={() => setTransferModal(false)}>
+          <p className="eyebrow text-cream-dim mb-3">· Transfer</p>
+          <h3 className="headline-roman text-2xl text-cream mb-4">
+            Transfer this stream
+          </h3>
+          <p className="text-sm text-cream-muted leading-relaxed mb-6">
+            Withdraws any claimable balance to you, then re-assigns the NFT
+            receipt to a new recipient. Address must be a valid G… key.
+          </p>
+          <input
+            type="text"
+            value={transferTo}
+            onChange={(e) => setTransferTo(e.target.value)}
+            placeholder="G…"
+            spellCheck={false}
+            className="w-full bg-night border border-stroke text-cream font-mono text-sm px-4 py-3 rounded-sm focus:outline-none focus:border-sand mb-8"
+          />
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={() => setTransferModal(false)}
+              className="text-[11px] uppercase tracking-[0.18em] px-5 py-2 border border-stroke text-cream-dim hover:text-cream hover:border-cream-dim transition-colors rounded-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={callTransfer}
+              disabled={!/^G[A-Z2-7]{55}$/.test(transferTo.trim())}
+              className="text-[11px] uppercase tracking-[0.18em] px-5 py-2 border border-sand text-sand hover:bg-sand/10 transition-colors rounded-sm disabled:border-stroke disabled:text-cream-dim disabled:hover:bg-transparent disabled:cursor-not-allowed"
+            >
+              Transfer →
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -547,38 +1024,37 @@ function LoadedStream({
  * Subcomponents                                                    *
  * ----------------------------------------------------------------- */
 
-function Meta({
+function DateCell({
   label,
-  children,
-  last,
+  ts,
+  accent,
 }: {
   label: string;
-  children: React.ReactNode;
-  last?: boolean;
+  ts: number | null;
+  accent: 'sand' | 'violet' | 'cream-muted';
 }) {
+  const colorMap = {
+    sand: 'text-sand',
+    violet: 'text-violet',
+    'cream-muted': 'text-cream',
+  };
   return (
-    <div
-      className={
-        'grid grid-cols-[120px_1fr] items-baseline gap-x-4 py-3 ' +
-        (last ? '' : 'border-b border-stroke/40')
-      }
-    >
-      <dt className="eyebrow text-cream-dim">{label}</dt>
-      <dd className="text-left">{children}</dd>
+    <div className="px-0 md:px-5 md:first:pl-0 md:last:pr-0 py-4 md:border-r md:border-stroke/40 md:last:border-r-0 border-b md:border-b-0 border-stroke/40 md:py-0">
+      <p className={`text-[10px] uppercase tracking-[0.18em] ${colorMap[accent]}`}>
+        {label}
+      </p>
+      <p className={`mt-2 font-display italic text-2xl ${ts ? colorMap[accent] : 'text-cream-dim'}`}>
+        {ts
+          ? new Date(ts * 1000).toLocaleDateString(undefined, {
+              month: 'short',
+              day: '2-digit',
+            })
+          : 'None'}
+      </p>
+      <p className="mt-1 font-mono text-[11px] text-cream-dim">
+        {ts ? formatTimestamp(ts) : '—'}
+      </p>
     </div>
-  );
-}
-
-function Yesno({ value }: { value: boolean }) {
-  return (
-    <span
-      className={
-        'font-mono text-xs uppercase tracking-[0.18em] ' +
-        (value ? 'text-teal-bright' : 'text-cream-dim')
-      }
-    >
-      {value ? 'Yes' : 'No'}
-    </span>
   );
 }
 
@@ -640,7 +1116,7 @@ function Modal({
 }
 
 /* ----------------------------------------------------------------- *
- * Events log                                                       *
+ * Events log — restyled as a vertical timeline                     *
  * ----------------------------------------------------------------- */
 
 type EventRow = {
@@ -648,7 +1124,34 @@ type EventRow = {
   kind: string;
   ts: string;
   txHash: string;
+  details?: string;
 };
+
+const EVENT_DOT: Record<string, string> = {
+  CREATED: 'bg-sand',
+  CREATE: 'bg-sand',
+  CREATE_LINEAR: 'bg-sand',
+  CREATE_TRANCHED: 'bg-sand',
+  WITHDRAW: 'bg-teal',
+  WITHDRAWN: 'bg-teal',
+  WITHDRAW_MAX: 'bg-teal',
+  CANCEL: 'bg-rose',
+  CANCELED: 'bg-rose',
+  RENOUNCE: 'bg-violet',
+  RENOUNCED: 'bg-violet',
+  TRANSFER: 'bg-cream',
+  TRANSFERRED: 'bg-cream',
+  BURN: 'bg-cream-dim',
+  BURNED: 'bg-cream-dim',
+};
+
+function dotClass(kind: string): string {
+  const upper = kind.toUpperCase();
+  for (const k of Object.keys(EVENT_DOT)) {
+    if (upper.includes(k)) return EVENT_DOT[k];
+  }
+  return 'bg-cream-dim';
+}
 
 function EventsLog({ streamId }: { streamId: number }) {
   const [events, setEvents] = useState<EventRow[] | null>(null);
@@ -674,8 +1177,8 @@ function EventsLog({ streamId }: { streamId: number }) {
         });
         if (cancelled) return;
         const { scValToNative } = await import('@stellar/stellar-sdk');
-        const rows: EventRow[] = res.events
-          .map((ev) => {
+        const rows = res.events
+          .map((ev): EventRow | null => {
             const decodedTopics: unknown[] = ev.topic.map((t) => {
               try {
                 return scValToNative(t);
@@ -699,11 +1202,25 @@ function EventsLog({ streamId }: { streamId: number }) {
                 value !== null &&
                 JSON.stringify(value).includes(`"stream_id":${streamId}`));
             if (!inTopics && !inValue) return null;
+            let details: string | undefined;
+            if (
+              value &&
+              typeof value === 'object' &&
+              'amount' in (value as Record<string, unknown>)
+            ) {
+              const amt = (value as { amount: bigint | number | string }).amount;
+              try {
+                details = `${formatStroops(BigInt(amt))} XLM`;
+              } catch {
+                /* noop */
+              }
+            }
             return {
               id: ev.id,
               kind: kind.toUpperCase(),
               ts: ev.ledgerClosedAt,
               txHash: ev.txHash,
+              details,
             };
           })
           .filter((r): r is EventRow => r !== null);
@@ -717,47 +1234,70 @@ function EventsLog({ streamId }: { streamId: number }) {
     };
   }, [streamId]);
 
+  if (error) {
+    return (
+      <p className="font-mono text-xs text-rose border-l-2 border-rose pl-4 py-2">
+        RPC error: {error}
+      </p>
+    );
+  }
+  if (events === null) {
+    return <p className="text-xs text-cream-dim">Loading events…</p>;
+  }
+  if (events.length === 0) {
+    return (
+      <p className="text-xs text-cream-dim">
+        No events for this stream yet.
+      </p>
+    );
+  }
+
   return (
-    <section className="mt-16 border-t border-stroke pt-10">
-      <p className="eyebrow text-cream-dim mb-6">· Activity</p>
-      {error && (
-        <p className="font-mono text-xs text-rose border-l-2 border-rose pl-4 py-2">
-          RPC error: {error}
-        </p>
-      )}
-      {events === null && !error && (
-        <p className="text-xs text-cream-dim">Loading events…</p>
-      )}
-      {events && events.length === 0 && (
-        <p className="text-xs text-cream-dim">
-          No events for this stream yet.
-        </p>
-      )}
-      {events && events.length > 0 && (
-        <ul className="space-y-0">
-          {events.map((ev) => (
-            <li
-              key={ev.id}
-              className="grid grid-cols-[180px_140px_1fr] items-baseline gap-x-6 py-3 border-b border-stroke/40"
-            >
-              <span className="font-mono text-xs text-cream-dim">
-                {new Date(ev.ts).toLocaleString(undefined, {
-                  month: 'short',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                })}
-              </span>
-              <span className="eyebrow text-teal-bright">{ev.kind}</span>
-              <span className="font-mono text-xs text-cream-dim break-all">
-                tx {ev.txHash.slice(0, 8)}…
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <ol className="relative">
+      {/* Vertical connector */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[5px] top-2 bottom-2 w-px bg-stroke"
+      />
+      {events.map((ev) => (
+        <li
+          key={ev.id}
+          className="relative pl-7 py-3 grid grid-cols-[1fr_180px] items-baseline gap-x-4"
+        >
+          <span
+            aria-hidden
+            className={
+              'absolute left-0 top-4 w-3 h-3 rounded-full border-2 border-night ' +
+              dotClass(ev.kind)
+            }
+          />
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-cream">
+              {ev.kind}
+            </p>
+            {ev.details && (
+              <p className="mt-1 font-mono text-xs text-cream-muted">
+                → {ev.details}
+              </p>
+            )}
+          </div>
+          <div className="text-right">
+            <p className="font-mono text-xs text-cream-dim">
+              {new Date(ev.ts).toLocaleString(undefined, {
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
+            </p>
+            <p className="mt-1 font-mono text-[10px] text-cream-dim/70">
+              tx {ev.txHash.slice(0, 8)}…
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -831,17 +1371,10 @@ function SkeletonView({ id }: { id: number }) {
       <p className="eyebrow">
         <span className="text-sand">·</span>{' '}
         <span className="ml-1">Stream #{id}</span>{' '}
-        <span className="mx-2 text-stroke-2">/</span> loading…
+        <span className="mx-2 text-stroke-2">/</span>
+        <span className="text-cream-dim">Loading stream…</span>
       </p>
-      <div className="mt-10 h-[280px] border border-stroke bg-midnight/50 animate-pulse rounded-sm" />
-      <div className="mt-6 grid grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-24 border border-stroke bg-midnight/40 animate-pulse rounded-sm"
-          />
-        ))}
-      </div>
+      <div className="mt-16 max-w-[440px] mx-auto aspect-square border border-stroke/50 rounded-full opacity-20 animate-pulse" />
     </div>
   );
 }
