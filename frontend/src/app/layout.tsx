@@ -65,6 +65,12 @@ export default function RootLayout({
                   Create
                 </a>
                 <a
+                  href="/dashboard"
+                  className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
+                >
+                  Dashboard
+                </a>
+                <a
                   href="/#principles"
                   className="hidden sm:inline-block text-[11px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"
                 >

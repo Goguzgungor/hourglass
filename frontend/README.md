@@ -73,3 +73,45 @@ These are wired into Tailwind as `bg-night`, `text-cream`, `border-stroke`, etc.
 - **Stage 1** (this build): scaffold, design system, landing page.
 - **Stage 2**: wallet kit wiring, `/create` flow, `/stream/[id]` page,
   contract reads/writes via the SDK.
+- **Stage 3**: Mongo-backed indexer + `/dashboard` for connected wallet.
+
+## Indexer (Mongo)
+
+The indexer is a long-running Node script that ingests Soroban events from
+the lockup contract into MongoDB. The `/dashboard` page and the
+`/api/streams*` + `/api/stats` routes read from this index, NOT the chain
+directly — so the dashboard renders instantly and survives transient RPC
+hiccups.
+
+Uses the existing local Mongo container (`id-mongodb-1` at
+`localhost:27017`) by default. Override with `MONGODB_URL` / `MONGODB_DB`
+env vars.
+
+```bash
+# 1. Make sure quickstart + contracts are up
+../scripts/quickstart-up.sh
+../scripts/deploy-local.sh
+
+# 2. Make sure Mongo is running (it usually is)
+docker ps | grep mongo
+
+# 3. Run the indexer in one terminal
+cd frontend
+npm run indexer
+
+# 4. Run the frontend in another terminal
+npm run dev
+```
+
+Visit http://localhost:3000/dashboard — once you create a stream via
+`/create`, the indexer will pick it up within a few seconds and the dashboard
+will populate.
+
+### Collections
+
+- `streams` — one document per stream id, refreshed from the contract on
+  every event so deposited / withdrawn / refunded are always current.
+- `actions` — append-only audit log; idempotent via a unique compound index
+  on `(tx_hash, log_index)`.
+- `meta` — single-doc scratch space; holds the next ledger to fetch so the
+  indexer can resume cleanly after a restart.
