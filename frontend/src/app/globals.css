@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+/* ---------- Design tokens ---------- */
+:root {
+  --night: #0a0e1a;
+  --midnight: #101729;
+  --midnight-2: #1a2238;
+  --stroke: #2a3552;
+  --stroke-2: #3a4a72;
+  --sand: #e8b76b;
+  --sand-bright: #fbd38d;
+  --sand-deep: #b88646;
+  --cream: #f5ebd9;
+  --cream-muted: #b9b2a3;
+  --cream-dim: #8a92aa;
+  --success: #5bcfd1;
+  --warning: #ffc24d;
+  --danger: #ff7a8f;
+}
+
+/* ---------- Tailwind v4 theme wiring ---------- */
+@theme inline {
+  --color-night: var(--night);
+  --color-midnight: var(--midnight);
+  --color-midnight-2: var(--midnight-2);
+  --color-stroke: var(--stroke);
+  --color-stroke-2: var(--stroke-2);
+  --color-sand: var(--sand);
+  --color-sand-bright: var(--sand-bright);
+  --color-sand-deep: var(--sand-deep);
+  --color-cream: var(--cream);
+  --color-cream-muted: var(--cream-muted);
+  --color-cream-dim: var(--cream-dim);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ---------- Force dark theme always ---------- */
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--night);
+  color: var(--cream);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-feature-settings: "ss01", "ss02", "cv01", "cv11";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  min-height: 100dvh;
+}
+
+/* ---------- Film-grain overlay on the whole page ---------- */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 240px 240px;
+}
+
+/* ---------- Text selection ---------- */
+::selection {
+  background: var(--sand);
+  color: var(--night);
+}
+
+/* ---------- Scrollbar (dark + sand thumb) ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sand-deep) var(--midnight);
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--midnight);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--sand-deep);
+  border: 1px solid var(--midnight);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--sand);
+}
+
+/* ---------- Editorial label utility ---------- */
+.eyebrow {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  color: var(--cream-dim);
+  font-weight: 500;
+}
+
+/* ---------- Hourglass falling-particle keyframes ---------- */
+@keyframes fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(58px);
+    opacity: 0;
+  }
+}
+
+/* ---------- Page reveal stagger ---------- */
+@keyframes fade-up-stagger {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  animation: fade-up-stagger 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ---------- Slow ambient shimmer on accents ---------- */
+@keyframes sand-shimmer {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------- Constellation twinkle ---------- */
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ---------- Link hover underline ---------- */
+.underline-sand {
+  background-image: linear-gradient(var(--sand), var(--sand));
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 100% 1px;
+  transition: background-size 200ms ease;
+}
+.underline-sand:hover {
+  background-size: 100% 2px;
+}
+
+/* ---------- Hairline borders pull a hint of cosmic blue ---------- */
+hr.hairline {
+  border: 0;
+  border-top: 1px solid var(--stroke);
+  margin: 0;
+}
+
+/* ---------- Display headline tweak: tighter leading + slight optical adjust ---------- */
+.headline {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+  font-variation-settings: "opsz" 144, "SOFT" 50, "WONK" 0;
+}
+
+.headline-roman {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-weight: 300;
+  font-style: normal;
+  line-height: 1.0;
+  letter-spacing: -0.015em;
+  font-variation-settings: "opsz" 144, "SOFT" 50, "WONK" 0;
+}
+
+/* ---------- Numeric mono numerals ---------- */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
