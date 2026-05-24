@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/wallet-context';
 import { useToast } from '@/lib/toast';
 import { makeLockup } from '@/lib/sdk';
-import { DEPLOYMENT, hasDeployment } from '@/lib/deployments';
+import { hasDeployment } from '@/lib/deployments';
+import { TOKENS, findToken, type TokenInfo } from '@/lib/tokens';
 import {
   datetimeLocalToUnix,
   formatDuration,
@@ -16,6 +17,7 @@ import {
   unixToDatetimeLocal,
 } from '@/lib/format';
 import StreamRiver from '@/components/StreamRiver';
+import Toggle from '@/components/Toggle';
 
 /* ----------------------------------------------------------------- *
  * Defaults — recomputed once at mount so we don't churn the form.   *
@@ -40,6 +42,7 @@ export default function CreateStreamPage() {
   const init = useMemo(defaults, []);
 
   // Form state
+  const [tokenId, setTokenId] = useState(TOKENS[0]?.id ?? '');
   const [recipient, setRecipient] = useState('');
   const [deposit, setDeposit] = useState('1');
   const [startStr, setStartStr] = useState(init.start);
@@ -49,6 +52,9 @@ export default function CreateStreamPage() {
   const [unlockAtCliff, setUnlockAtCliff] = useState('0');
   const [cancelable, setCancelable] = useState(true);
   const [transferable, setTransferable] = useState(true);
+
+  const selectedToken = findToken(tokenId);
+  const symbol = selectedToken?.symbol ?? 'XLM';
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,13 +129,18 @@ export default function CreateStreamPage() {
       return;
     }
 
+    if (!tokenId) {
+      setError('Select a token.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const lockup = makeLockup(address);
       const tx = await lockup.create_linear({
         sender: address,
         recipient: recipient.trim(),
-        token: DEPLOYMENT.nativeToken,
+        token: tokenId,
         deposited: parsed.depositStroops,
         start_ts: BigInt(parsed.startTs),
         cliff_ts: BigInt(parsed.cliffTs),
@@ -143,7 +154,7 @@ export default function CreateStreamPage() {
       const streamId = result.result;
       toast.push({
         kicker: `Stream #${streamId} / created`,
-        message: `${formatStroops(parsed.depositStroops)} XLM streaming to ${truncAddress(recipient.trim())}.`,
+        message: `${formatStroops(parsed.depositStroops)} ${symbol} streaming to ${truncAddress(recipient.trim())}.`,
       });
       router.push(`/stream/${streamId}`);
     } catch (e) {
@@ -182,19 +193,12 @@ export default function CreateStreamPage() {
 
         <form className="mt-16 space-y-12" onSubmit={onSubmit} noValidate>
           {/* ---------------- 1. Token ---------------- */}
-          <Field
-            label="Token"
-            hint="Native XLM via the local Stellar Asset Contract."
-          >
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-2 border border-sand px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-sand-bright rounded-none">
-                <span className="size-[6px] bg-sand rounded-full" />
-                XLM
-              </span>
-              <span className="font-mono text-xs text-cream-dim break-all">
-                {DEPLOYMENT.nativeToken || '—'}
-              </span>
-            </div>
+          <Field label="Token">
+            <TokenPicker
+              tokens={TOKENS}
+              selectedId={tokenId}
+              onSelect={setTokenId}
+            />
           </Field>
 
           {/* ---------------- 2. Recipient ---------------- */}
@@ -218,7 +222,7 @@ export default function CreateStreamPage() {
             label="Deposit amount"
             hint="The full balance to lock in the stream."
           >
-            <XlmInput value={deposit} onChange={setDeposit} />
+            <AmountInput value={deposit} onChange={setDeposit} symbol={symbol} />
           </Field>
 
           {/* ---------------- 4-6. Schedule ---------------- */}
@@ -258,13 +262,21 @@ export default function CreateStreamPage() {
               label="Unlock at start"
               hint="Lump sum released the instant the stream begins."
             >
-              <XlmInput value={unlockAtStart} onChange={setUnlockAtStart} />
+              <AmountInput
+                value={unlockAtStart}
+                onChange={setUnlockAtStart}
+                symbol={symbol}
+              />
             </Field>
             <Field
               label="Unlock at cliff"
               hint="Lump sum released when the cliff lands."
             >
-              <XlmInput value={unlockAtCliff} onChange={setUnlockAtCliff} />
+              <AmountInput
+                value={unlockAtCliff}
+                onChange={setUnlockAtCliff}
+                symbol={symbol}
+              />
             </Field>
           </div>
 
@@ -289,6 +301,7 @@ export default function CreateStreamPage() {
             parsed={parsed.ok ? parsed : null}
             cancelable={cancelable}
             transferable={transferable}
+            symbol={symbol}
           />
 
           {/* ---------------- Errors ---------------- */}
@@ -351,6 +364,7 @@ export default function CreateStreamPage() {
           <PreviewPane
             parsed={parsed.ok ? parsed : null}
             recipient={recipient}
+            symbol={symbol}
           />
           <p className="mt-4 text-[11px] text-cream-dim/80 leading-relaxed">
             A sketch of the river the recipient will see — bands update as you
@@ -369,6 +383,7 @@ export default function CreateStreamPage() {
 function PreviewPane({
   parsed,
   recipient,
+  symbol,
 }: {
   parsed: {
     depositStroops: bigint;
@@ -378,6 +393,7 @@ function PreviewPane({
     duration: number;
   } | null;
   recipient: string;
+  symbol: string;
 }) {
   // Use a 5-minute fallback window so the river still renders something
   // even before the user has filled in valid values.
@@ -412,7 +428,7 @@ function PreviewPane({
           Deposit
         </dt>
         <dd className="text-sand-bright">
-          {parsed ? `${formatStroops(parsed.depositStroops)} XLM` : '—'}
+          {parsed ? `${formatStroops(parsed.depositStroops)} ${symbol}` : '—'}
         </dd>
         <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
           Duration
@@ -456,12 +472,14 @@ function Field({
   );
 }
 
-function XlmInput({
+function AmountInput({
   value,
   onChange,
+  symbol,
 }: {
   value: string;
   onChange: (s: string) => void;
+  symbol: string;
 }) {
   return (
     <div className="flex items-baseline gap-3 border-b border-stroke focus-within:border-sand transition-colors">
@@ -475,9 +493,105 @@ function XlmInput({
         autoComplete="off"
       />
       <span className="font-mono text-xs text-cream-dim uppercase tracking-[0.18em]">
-        XLM
+        {symbol}
       </span>
     </div>
+  );
+}
+
+function TokenPicker({
+  tokens,
+  selectedId,
+  onSelect,
+}: {
+  tokens: TokenInfo[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  const selected = tokens.find((t) => t.id === selectedId);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        {tokens.map((t) => {
+          const isSelected = t.id === selectedId;
+          return (
+            <button
+              key={t.id || t.symbol}
+              type="button"
+              onClick={() => onSelect(t.id)}
+              className={
+                'inline-flex items-center gap-2 sm:px-4 py-2 px-3 rounded-none border transition-colors ' +
+                (isSelected
+                  ? 'border-sand bg-sand/10 text-sand-bright'
+                  : 'border-stroke text-cream hover:border-stroke-2 hover:text-cream')
+              }
+              aria-pressed={isSelected}
+            >
+              <span
+                className={
+                  'size-[8px] rounded-full ' + (t.glyphColor || 'bg-sand')
+                }
+              />
+              <span className="font-mono text-[11px] uppercase tracking-[0.18em]">
+                {t.symbol}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {selected && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-cream-dim/80">
+              SAC
+            </span>
+            <code className="font-mono text-xs text-cream-dim break-all">
+              {selected.id || '—'}
+            </code>
+            {selected.id && <CopyButton text={selected.id} />}
+          </div>
+          <p className="text-xs text-cream-muted leading-relaxed">
+            {selected.description}
+          </p>
+          {selected.issuer && (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-cream-dim/80">
+                Issuer
+              </span>
+              <code className="font-mono text-xs text-cream-dim break-all">
+                {selected.issuer}
+              </code>
+              <CopyButton text={selected.issuer} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.preventDefault();
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        } catch {
+          /* ignore */
+        }
+      }}
+      className="font-mono text-[10px] uppercase tracking-[0.18em] text-cream-dim hover:text-sand-bright transition-colors"
+      aria-label="Copy"
+    >
+      {copied ? 'copied' : 'copy'}
+    </button>
   );
 }
 
@@ -493,44 +607,27 @@ function ToggleRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-start gap-6 py-3 border-t border-stroke/60">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        onClick={() => onChange(!value)}
-        className={
-          'relative w-12 h-8 shrink-0 border ' +
-          (value
-            ? 'border-sand bg-sand/10'
-            : 'border-stroke bg-night hover:border-cream-dim') +
-          ' transition-colors'
-        }
-      >
-        <span
-          className={
-            'absolute top-1 w-4 h-6 transition-transform duration-200 rounded-none ' +
-            (value
-              ? 'translate-x-[26px] bg-sand'
-              : 'translate-x-[2px] bg-stroke')
-          }
-        />
-      </button>
-      <div className="flex-1">
-        <span className="eyebrow text-cream block">{label}</span>
+    <label className="flex items-center gap-5 py-4 border-t border-stroke/60 cursor-pointer select-none group">
+      <Toggle checked={value} onChange={onChange} ariaLabel={label} />
+      <div className="flex-1 min-w-0">
+        <span className="eyebrow text-cream block group-hover:text-sand-bright transition-colors">
+          {label}
+        </span>
         {hint && (
-          <span className="block mt-1 text-xs text-cream-dim/80">{hint}</span>
+          <span className="block mt-1 text-xs text-cream-dim/80 leading-snug">
+            {hint}
+          </span>
         )}
       </div>
       <span
         className={
-          'font-mono text-[11px] uppercase tracking-[0.18em] mt-1 ' +
+          'font-mono text-[11px] uppercase tracking-[0.18em] shrink-0 ' +
           (value ? 'text-sand-bright' : 'text-cream-dim')
         }
       >
         {value ? 'On' : 'Off'}
       </span>
-    </div>
+    </label>
   );
 }
 
@@ -567,6 +664,7 @@ function SpecSummary({
   parsed,
   cancelable,
   transferable,
+  symbol,
 }: {
   parsed: {
     depositStroops: bigint;
@@ -579,6 +677,7 @@ function SpecSummary({
   } | null;
   cancelable: boolean;
   transferable: boolean;
+  symbol: string;
 }) {
   return (
     <div className="border-t border-stroke pt-8">
@@ -586,7 +685,7 @@ function SpecSummary({
       <dl className="grid grid-cols-[140px_1fr] gap-y-2 font-mono text-xs">
         <dt className="text-cream-dim">deposit</dt>
         <dd className="text-cream">
-          {parsed ? `${formatStroops(parsed.depositStroops)} XLM` : '—'}
+          {parsed ? `${formatStroops(parsed.depositStroops)} ${symbol}` : '—'}
         </dd>
         <dt className="text-cream-dim">duration</dt>
         <dd className="text-cream">
@@ -604,11 +703,15 @@ function SpecSummary({
         </dd>
         <dt className="text-cream-dim">unlock @ start</dt>
         <dd className="text-cream">
-          {parsed ? `${formatStroops(parsed.unlockStartStroops)} XLM` : '—'}
+          {parsed
+            ? `${formatStroops(parsed.unlockStartStroops)} ${symbol}`
+            : '—'}
         </dd>
         <dt className="text-cream-dim">unlock @ cliff</dt>
         <dd className="text-cream">
-          {parsed ? `${formatStroops(parsed.unlockCliffStroops)} XLM` : '—'}
+          {parsed
+            ? `${formatStroops(parsed.unlockCliffStroops)} ${symbol}`
+            : '—'}
         </dd>
         <dt className="text-cream-dim">cancelable</dt>
         <dd className="text-cream">{cancelable ? 'yes' : 'no'}</dd>

@@ -1,8 +1,9 @@
 // Pre-dev / pre-build helpers:
 //
-// 1. Copies <repo>/deployments/local.json into src/lib/deployment.json so the
-//    Next.js build can import it. If the file doesn't exist, writes an empty
-//    placeholder so the build still succeeds (the UI shows a notice).
+// 1. Copies <repo>/deployments/<NETWORK>.json into src/lib/deployment.json so
+//    the Next.js build can import it. NETWORK is taken from the DEPLOY_NETWORK
+//    env var and defaults to `local`. If the file doesn't exist, writes an
+//    empty placeholder so the build still succeeds (the UI shows a notice).
 //
 // 2. Materialises the local `hourglass` SDK into node_modules. npm installs
 //    `file:` deps as a symlink, which Turbopack refuses to follow across the
@@ -20,7 +21,8 @@ const frontendRoot = resolve(__dirname, '..');
 
 /* ---------- 1. Deployment manifest ---------- */
 {
-  const src = resolve(repoRoot, 'deployments/local.json');
+  const network = process.env.DEPLOY_NETWORK || 'local';
+  const src = resolve(repoRoot, `deployments/${network}.json`);
   const dst = resolve(frontendRoot, 'src/lib/deployment.json');
   await mkdir(dirname(dst), { recursive: true });
   if (existsSync(src)) {
@@ -31,7 +33,7 @@ const frontendRoot = resolve(__dirname, '..');
       dst,
       JSON.stringify(
         {
-          network: 'local',
+          network,
           rpc_url: 'http://localhost:8000/soroban/rpc',
           network_passphrase: 'Standalone Network ; February 2017',
           deployed_at: null,
@@ -45,7 +47,7 @@ const frontendRoot = resolve(__dirname, '..');
       ),
     );
     console.warn(
-      '[sync-deployment] deployments/local.json missing — wrote empty placeholder',
+      `[sync-deployment] deployments/${network}.json missing — wrote empty placeholder`,
     );
   }
 }
