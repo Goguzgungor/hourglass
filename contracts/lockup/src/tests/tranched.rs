@@ -8,18 +8,22 @@ fn create_tranched_pulls_sum() {
     let now = f.env.ledger().timestamp();
     let tranches = vec![
         &f.env,
-        Tranche { amount: 100, ts: now + 100 },
-        Tranche { amount: 200, ts: now + 200 },
-        Tranche { amount: 300, ts: now + 300 },
+        Tranche {
+            amount: 100,
+            ts: now + 100,
+        },
+        Tranche {
+            amount: 200,
+            ts: now + 200,
+        },
+        Tranche {
+            amount: 300,
+            ts: now + 300,
+        },
     ];
-    let id = f.lockup.create_tranched(
-        &f.sender,
-        &f.recipient,
-        &f.token,
-        &tranches,
-        &true,
-        &true,
-    );
+    let id = f
+        .lockup
+        .create_tranched(&f.sender, &f.recipient, &f.token, &tranches, &true, &true);
     assert_eq!(id, 1);
     assert_eq!(f.token_client.balance(&f.lockup_addr), 600);
 
@@ -34,18 +38,22 @@ fn tranched_progresses_in_steps() {
     let now = f.env.ledger().timestamp();
     let tranches = vec![
         &f.env,
-        Tranche { amount: 100, ts: now + 100 },
-        Tranche { amount: 200, ts: now + 200 },
-        Tranche { amount: 300, ts: now + 300 },
+        Tranche {
+            amount: 100,
+            ts: now + 100,
+        },
+        Tranche {
+            amount: 200,
+            ts: now + 200,
+        },
+        Tranche {
+            amount: 300,
+            ts: now + 300,
+        },
     ];
-    let id = f.lockup.create_tranched(
-        &f.sender,
-        &f.recipient,
-        &f.token,
-        &tranches,
-        &true,
-        &true,
-    );
+    let id = f
+        .lockup
+        .create_tranched(&f.sender, &f.recipient, &f.token, &tranches, &true, &true);
 
     assert_eq!(f.lockup.streamed_amount(&id), 0);
     f.env.ledger().set_timestamp(now + 100);
@@ -82,8 +90,14 @@ fn tranched_rejects_non_ascending() {
         &f.token,
         &vec![
             &f.env,
-            Tranche { amount: 100, ts: now + 200 },
-            Tranche { amount: 100, ts: now + 100 },
+            Tranche {
+                amount: 100,
+                ts: now + 200,
+            },
+            Tranche {
+                amount: 100,
+                ts: now + 100,
+            },
         ],
         &true,
         &true,
@@ -101,7 +115,10 @@ fn tranched_rejects_zero_amount() {
         &f.token,
         &vec![
             &f.env,
-            Tranche { amount: 0, ts: now + 100 },
+            Tranche {
+                amount: 0,
+                ts: now + 100,
+            },
         ],
         &true,
         &true,

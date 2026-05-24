@@ -22,8 +22,10 @@ pub(crate) fn withdrawn(env: &Env, id: u32, to: &Address, amount: i128, caller: 
 pub(crate) fn canceled(env: &Env, id: u32, sender_refund: i128, recipient_balance: i128) {
     let topic_domain = Symbol::new(env, "stream");
     let topic_action = Symbol::new(env, "canceled");
-    env.events()
-        .publish((topic_domain, topic_action, id), (sender_refund, recipient_balance));
+    env.events().publish(
+        (topic_domain, topic_action, id),
+        (sender_refund, recipient_balance),
+    );
 }
 
 pub(crate) fn renounced(env: &Env, id: u32) {

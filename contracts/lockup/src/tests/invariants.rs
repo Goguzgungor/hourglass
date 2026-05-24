@@ -39,9 +39,18 @@ fn streamed_amount_monotonic_tranched() {
         &f.token,
         &vec![
             &f.env,
-            Tranche { amount: 100, ts: now + 100 },
-            Tranche { amount: 200, ts: now + 300 },
-            Tranche { amount: 700, ts: now + 600 },
+            Tranche {
+                amount: 100,
+                ts: now + 100,
+            },
+            Tranche {
+                amount: 200,
+                ts: now + 300,
+            },
+            Tranche {
+                amount: 700,
+                ts: now + 600,
+            },
         ],
         &true,
         &true,

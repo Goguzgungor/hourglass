@@ -27,7 +27,10 @@ fn cancel_midstream_refunds_sender_and_locks_recipient_share() {
     let s = f.lockup.get_stream(&id);
     assert!(s.was_canceled);
     assert_eq!(s.refunded, 400_000);
-    assert_eq!(f.token_client.balance(&f.sender), sender_bal_before + 400_000);
+    assert_eq!(
+        f.token_client.balance(&f.sender),
+        sender_bal_before + 400_000
+    );
     // Recipient's 600k still sits in the lockup until they withdraw.
     assert_eq!(f.token_client.balance(&f.lockup_addr), 600_000);
 

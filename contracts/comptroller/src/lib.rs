@@ -34,7 +34,9 @@ impl Comptroller {
         max_staleness_secs: u32,
     ) {
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::FeeCollector, &fee_collector);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeCollector, &fee_collector);
         env.storage().instance().set(&DataKey::Oracle, &oracle);
         env.storage()
             .instance()
@@ -46,7 +48,10 @@ impl Comptroller {
     }
 
     pub fn fee_collector(env: Env) -> Address {
-        env.storage().instance().get(&DataKey::FeeCollector).unwrap()
+        env.storage()
+            .instance()
+            .get(&DataKey::FeeCollector)
+            .unwrap()
     }
 }
 
@@ -60,8 +65,10 @@ impl Comptroller {
     pub fn set_admin(env: Env, new_admin: Address) {
         require_admin(&env);
         env.storage().instance().set(&DataKey::Admin, &new_admin);
-        env.events()
-            .publish((symbol_short!("admin"), symbol_short!("changed")), new_admin);
+        env.events().publish(
+            (symbol_short!("admin"), symbol_short!("changed")),
+            new_admin,
+        );
     }
 }
 
@@ -82,10 +89,8 @@ impl Comptroller {
         env.storage()
             .instance()
             .set(&DataKey::FeeUsdMicros(op_index(&op)), &micros);
-        env.events().publish(
-            (Symbol::new(&env, "fee_set"), op_index(&op)),
-            micros,
-        );
+        env.events()
+            .publish((Symbol::new(&env, "fee_set"), op_index(&op)), micros);
     }
 
     pub fn get_fee_usd_micros(env: Env, op: hourglass_shared::OpKind) -> i128 {
@@ -96,9 +101,9 @@ impl Comptroller {
     }
 }
 
-use crate::oracle::{PriceOracle, PriceSnapshot};
 #[cfg(test)]
 use crate::oracle::mock::MockOracle;
+use crate::oracle::{PriceOracle, PriceSnapshot};
 
 #[contractimpl]
 impl Comptroller {

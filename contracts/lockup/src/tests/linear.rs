@@ -22,7 +22,10 @@ fn create_linear_pulls_tokens_and_persists() {
     );
 
     assert_eq!(id, 1);
-    assert_eq!(f.token_client.balance(&f.sender), 1_000_000_000_000i128 - 1_000_000);
+    assert_eq!(
+        f.token_client.balance(&f.sender),
+        1_000_000_000_000i128 - 1_000_000
+    );
     assert_eq!(f.token_client.balance(&f.lockup_addr), 1_000_000);
 
     let s = f.lockup.get_stream(&id);
@@ -152,7 +155,10 @@ fn nft_name_and_symbol_set() {
     // The NonFungibleToken trait methods are exposed as contract entrypoints
     // (verified by their inclusion in the wasm export list). Invoke them via
     // the generated client.
-    assert_eq!(f.lockup.name(), String::from_str(&f.env, "Hourglass Stream"));
+    assert_eq!(
+        f.lockup.name(),
+        String::from_str(&f.env, "Hourglass Stream")
+    );
     assert_eq!(f.lockup.symbol(), String::from_str(&f.env, "STREAM"));
 }
 

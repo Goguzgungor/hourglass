@@ -88,11 +88,7 @@ impl Lockup {
 
         if sender_refund > 0 {
             let token_client = token::Client::new(&env, &s.token);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &s.sender,
-                &sender_refund,
-            );
+            token_client.transfer(&env.current_contract_address(), &s.sender, &sender_refund);
         }
 
         s.was_canceled = true;
@@ -134,7 +130,9 @@ impl Lockup {
         if !s.is_depleted {
             panic_with_error!(&env, Error::InvalidStatus);
         }
-        env.storage().persistent().remove(&DataKey::Stream(stream_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Stream(stream_id));
         nft::burn(&env, stream_id);
         events::burned(&env, stream_id);
     }

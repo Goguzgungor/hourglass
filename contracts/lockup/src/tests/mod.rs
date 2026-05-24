@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-mod common;
 mod burn;
 mod cancel;
+mod common;
 mod invariants;
 mod linear;
 mod tranched;

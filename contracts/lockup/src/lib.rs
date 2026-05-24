@@ -1,9 +1,7 @@
 #![no_std]
 
 use hourglass_shared::{Error, Stream};
-use soroban_sdk::{
-    contract, contractimpl, contracttype, panic_with_error, Address, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env, Vec};
 
 mod comptroller_client;
 mod create;
@@ -13,7 +11,7 @@ mod nft;
 mod view;
 
 const STREAM_TTL_BUMP_LEDGERS: u32 = 17_280 * 90; // ~90 days at 5s/ledger
-const STREAM_TTL_MIN_LEDGERS: u32 = 17_280 * 30;  // bump if below ~30 days
+const STREAM_TTL_MIN_LEDGERS: u32 = 17_280 * 30; // bump if below ~30 days
 
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -32,8 +30,12 @@ pub struct Lockup;
 impl Lockup {
     pub fn __constructor(env: Env, admin: Address, comptroller: Address, native_token: Address) {
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::Comptroller, &comptroller);
-        env.storage().instance().set(&DataKey::NativeToken, &native_token);
+        env.storage()
+            .instance()
+            .set(&DataKey::Comptroller, &comptroller);
+        env.storage()
+            .instance()
+            .set(&DataKey::NativeToken, &native_token);
         env.storage().instance().set(&DataKey::NextStreamId, &1u32);
         nft::init(&env);
     }
@@ -55,7 +57,11 @@ impl Lockup {
 }
 
 pub(crate) fn next_id(env: &Env) -> u32 {
-    let id: u32 = env.storage().instance().get(&DataKey::NextStreamId).unwrap();
+    let id: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextStreamId)
+        .unwrap();
     env.storage()
         .instance()
         .set(&DataKey::NextStreamId, &(id + 1));

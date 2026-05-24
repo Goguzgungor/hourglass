@@ -75,7 +75,10 @@ fn withdraw_max_and_transfer_atomic() {
     f.lockup.withdraw_max_and_transfer(&id, &new_owner);
 
     let bal_after = f.token_client.balance(&f.recipient);
-    assert!(bal_after > bal_before, "recipient should have received the streamed portion");
+    assert!(
+        bal_after > bal_before,
+        "recipient should have received the streamed portion"
+    );
     let s = f.lockup.get_stream(&id);
     assert_eq!(s.recipient, new_owner);
 }

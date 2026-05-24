@@ -132,20 +132,29 @@ mod linear_tests {
 
     #[test]
     fn unlock_at_start_only_before_cliff() {
-        assert_eq!(streamed_amount_linear(D, S, C, E, 100_000, 0, 1_500).unwrap(), 100_000);
+        assert_eq!(
+            streamed_amount_linear(D, S, C, E, 100_000, 0, 1_500).unwrap(),
+            100_000
+        );
     }
 
     #[test]
     fn cliff_lump_applies_at_cliff() {
         // 100k at start + 50k at cliff; at exactly cliff_ts, base = 850k, elapsed = 0
-        assert_eq!(streamed_amount_linear(D, S, C, E, 100_000, 50_000, 2_000).unwrap(), 150_000);
+        assert_eq!(
+            streamed_amount_linear(D, S, C, E, 100_000, 50_000, 2_000).unwrap(),
+            150_000
+        );
     }
 
     #[test]
     fn linear_interpolation_midway() {
         // halfway between cliff (2000) and end (4000) → 3000.
         // base = 1M; elapsed=1000, span=2000 → 500k; total = 500k.
-        assert_eq!(streamed_amount_linear(D, S, C, E, 0, 0, 3_000).unwrap(), 500_000);
+        assert_eq!(
+            streamed_amount_linear(D, S, C, E, 0, 0, 3_000).unwrap(),
+            500_000
+        );
     }
 
     #[test]
@@ -155,14 +164,20 @@ mod linear_tests {
 
     #[test]
     fn full_after_end_ts() {
-        assert_eq!(streamed_amount_linear(D, S, C, E, 100_000, 50_000, 99_999).unwrap(), D);
+        assert_eq!(
+            streamed_amount_linear(D, S, C, E, 100_000, 50_000, 99_999).unwrap(),
+            D
+        );
     }
 
     #[test]
     fn no_cliff_equals_no_cliff_lump() {
         // cliff_ts == start_ts means we go straight to linear interpolation after start.
         // At t=2000 (halfway between 1000 and 3000), base=1M, elapsed=1000, span=2000 → 500k.
-        assert_eq!(streamed_amount_linear(D, S, S, 3_000, 0, 0, 2_000).unwrap(), 500_000);
+        assert_eq!(
+            streamed_amount_linear(D, S, S, 3_000, 0, 0, 2_000).unwrap(),
+            500_000
+        );
     }
 
     #[test]
@@ -170,7 +185,13 @@ mod linear_tests {
         let mut prev = 0i128;
         for t in (0..5_000u64).step_by(37) {
             let cur = streamed_amount_linear(D, S, C, E, 10_000, 20_000, t).unwrap();
-            assert!(cur >= prev, "decreased at t={}: prev={}, cur={}", t, prev, cur);
+            assert!(
+                cur >= prev,
+                "decreased at t={}: prev={}, cur={}",
+                t,
+                prev,
+                cur
+            );
             prev = cur;
         }
     }
@@ -180,10 +201,7 @@ mod linear_tests {
 /// whose timestamp has passed (ts <= now).
 ///
 /// Caller must ensure tranches are sorted ascending by ts (enforced at create).
-pub fn streamed_amount_tranched(
-    tranches: &SorobanVec<Tranche>,
-    now: u64,
-) -> Result<i128, Error> {
+pub fn streamed_amount_tranched(tranches: &SorobanVec<Tranche>, now: u64) -> Result<i128, Error> {
     let mut acc: i128 = 0;
     for t in tranches.iter() {
         if t.ts > now {
@@ -202,7 +220,10 @@ mod tranched_tests {
     fn tranches(env: &Env, items: &[(i128, u64)]) -> SorobanVec<Tranche> {
         let mut v = SorobanVec::new(env);
         for (amount, ts) in items {
-            v.push_back(Tranche { amount: *amount, ts: *ts });
+            v.push_back(Tranche {
+                amount: *amount,
+                ts: *ts,
+            });
         }
         v
     }

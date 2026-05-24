@@ -18,7 +18,12 @@ fn setup() -> (Env, Address, Address, Address, Address) {
     let oracle = env.register(OracleStub, ());
     let id = env.register(
         Comptroller,
-        (admin.clone(), fee_collector.clone(), oracle.clone(), 3_600u32),
+        (
+            admin.clone(),
+            fee_collector.clone(),
+            oracle.clone(),
+            3_600u32,
+        ),
     );
     (env, id, admin, fee_collector, oracle)
 }

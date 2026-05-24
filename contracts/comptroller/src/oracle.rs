@@ -40,16 +40,8 @@ pub mod mock {
     impl PriceOracle for MockOracle {
         fn last_xlm_per_usd(env: &Env, oracle_addr: &Address) -> Result<PriceSnapshot, Error> {
             let (price_x14, ts_secs) = env.as_contract(oracle_addr, || {
-                let price: i128 = env
-                    .storage()
-                    .instance()
-                    .get(&MockKey::Price)
-                    .unwrap_or(0);
-                let ts: u64 = env
-                    .storage()
-                    .instance()
-                    .get(&MockKey::Ts)
-                    .unwrap_or(0);
+                let price: i128 = env.storage().instance().get(&MockKey::Price).unwrap_or(0);
+                let ts: u64 = env.storage().instance().get(&MockKey::Ts).unwrap_or(0);
                 (price, ts)
             });
             if price_x14 <= 0 {

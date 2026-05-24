@@ -1,5 +1,7 @@
 use crate::{events, next_id, nft, save_stream, Lockup, LockupArgs, LockupClient};
-use hourglass_shared::{Error, LinearShape, Stream, StreamShape, Tranche, TranchedShape, MAX_TRANCHES};
+use hourglass_shared::{
+    Error, LinearShape, Stream, StreamShape, Tranche, TranchedShape, MAX_TRANCHES,
+};
 use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env, Vec};
 
 #[contractimpl]
@@ -132,7 +134,9 @@ impl Lockup {
             deposited,
             withdrawn: 0,
             refunded: 0,
-            shape: StreamShape::Tranched(TranchedShape { tranches: tranches.clone() }),
+            shape: StreamShape::Tranched(TranchedShape {
+                tranches: tranches.clone(),
+            }),
         };
         let id = next_id(&env);
         save_stream(&env, id, &stream);
