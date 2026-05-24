@@ -27,6 +27,7 @@ import EmissionChart from '@/components/EmissionChart';
 import TabBar from '@/components/TabBar';
 import DialActionGrid from '@/components/DialActionGrid';
 import AttributePill from '@/components/AttributePill';
+import Toggle from '@/components/Toggle';
 import ScheduleTimeline from '@/components/ScheduleTimeline';
 import AmountTile from '@/components/AmountTile';
 import StatusPill, { type StreamStatusTag } from '@/components/StatusPill';
@@ -1000,23 +1001,12 @@ function LoadedStream({
                       </div>
 
                       <label className="flex items-center gap-3 text-cream-muted text-sm cursor-pointer select-none">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={nftWithdrawFirst}
-                          onClick={() => setNftWithdrawFirst((v) => !v)}
-                          className="relative inline-block w-[26px] h-4 border border-stroke align-middle"
-                        >
-                          <span
-                            aria-hidden
-                            className="absolute top-[1px] left-[1px] w-3 h-3 bg-sand transition-transform"
-                            style={{
-                              transform: nftWithdrawFirst
-                                ? 'translateX(11px)'
-                                : 'translateX(0)',
-                            }}
-                          />
-                        </button>
+                        <Toggle
+                          size="sm"
+                          checked={nftWithdrawFirst}
+                          onChange={setNftWithdrawFirst}
+                          ariaLabel="Withdraw accrued portion first"
+                        />
                         Withdraw accrued portion first
                       </label>
 
@@ -1485,74 +1475,75 @@ function dotClass(kind: string): string {
 function EventsLog({ streamId }: { streamId: number }) {
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unindexed, setUnindexed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { rpc } = await import('@stellar/stellar-sdk');
-        const server = new rpc.Server(DEPLOYMENT.rpcUrl, { allowHttp: true });
-        const latest = await server.getLatestLedger();
-        const startLedger = Math.max(1, latest.sequence - 200_000);
-        const res = await server.getEvents({
-          startLedger,
-          filters: [
-            {
-              type: 'contract',
-              contractIds: [DEPLOYMENT.lockup],
-            },
-          ],
-          limit: 200,
+        // Read from the indexer (Mongo via /api/streams/[id]) instead of the
+        // RPC's getEvents — the RPC only retains ~24h on testnet and rejects
+        // queries outside its sliding ledger window. The indexer has the full
+        // history since first deploy.
+        const res = await fetch(`/api/streams/${streamId}`, {
+          cache: 'no-store',
         });
         if (cancelled) return;
-        const { scValToNative } = await import('@stellar/stellar-sdk');
-        const rows = res.events
-          .map((ev): EventRow | null => {
-            const decodedTopics: unknown[] = ev.topic.map((t) => {
-              try {
-                return scValToNative(t);
-              } catch {
-                return null;
-              }
-            });
-            const kind = String(decodedTopics[0] ?? '?');
-            let value: unknown = null;
+        if (res.status === 404) {
+          // Stream exists on-chain but the indexer hasn't seen it yet.
+          setUnindexed(true);
+          setEvents([]);
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const json = (await res.json()) as {
+          actions: Array<{
+            action: string;
+            ts: number;
+            tx_hash: string;
+            ledger: number;
+            log_index?: number;
+            amount?: string;
+            actor?: string;
+            to?: string;
+            new_owner?: string;
+            sender_refund?: string;
+            recipient_balance?: string;
+          }>;
+        };
+        const rows: EventRow[] = json.actions.map((a) => {
+          let details: string | undefined;
+          if (a.amount) {
             try {
-              value = scValToNative(ev.value);
+              const formatted = formatStroops(BigInt(a.amount));
+              const who = a.to ? ` → ${truncAddress(a.to)}` : '';
+              details = `${formatted}${who}`;
             } catch {
               /* noop */
             }
-            const inTopics = decodedTopics.some(
-              (t) => typeof t === 'number' && t === streamId,
-            );
-            const inValue =
-              (typeof value === 'number' && value === streamId) ||
-              (typeof value === 'object' &&
-                value !== null &&
-                JSON.stringify(value).includes(`"stream_id":${streamId}`));
-            if (!inTopics && !inValue) return null;
-            let details: string | undefined;
-            if (
-              value &&
-              typeof value === 'object' &&
-              'amount' in (value as Record<string, unknown>)
-            ) {
-              const amt = (value as { amount: bigint | number | string }).amount;
-              try {
-                details = `${formatStroops(BigInt(amt))} XLM`;
-              } catch {
-                /* noop */
-              }
+          } else if (a.sender_refund || a.recipient_balance) {
+            try {
+              const refund = formatStroops(BigInt(a.sender_refund ?? '0'));
+              const lockedIn = formatStroops(
+                BigInt(a.recipient_balance ?? '0'),
+              );
+              details = `refund ${refund} · locked-in ${lockedIn}`;
+            } catch {
+              /* noop */
             }
-            return {
-              id: ev.id,
-              kind: kind.toUpperCase(),
-              ts: ev.ledgerClosedAt,
-              txHash: ev.txHash,
-              details,
-            };
-          })
-          .filter((r): r is EventRow => r !== null);
+          } else if (a.new_owner) {
+            details = `→ ${truncAddress(a.new_owner)}`;
+          }
+          return {
+            id: `${a.tx_hash}:${a.log_index ?? 0}`,
+            kind: a.action.toUpperCase(),
+            ts: new Date(a.ts * 1000).toISOString(),
+            txHash: a.tx_hash,
+            details,
+          };
+        });
         setEvents(rows);
       } catch (err) {
         if (!cancelled) setError((err as Error).message ?? String(err));
@@ -1566,12 +1557,22 @@ function EventsLog({ streamId }: { streamId: number }) {
   if (error) {
     return (
       <p className="font-mono text-xs text-rose border-l-2 border-rose pl-4 py-2">
-        RPC error: {error}
+        Indexer error: {error}
       </p>
     );
   }
   if (events === null) {
     return <p className="text-xs text-cream-dim">Loading events…</p>;
+  }
+  if (unindexed) {
+    return (
+      <p className="text-xs text-cream-dim leading-relaxed">
+        The indexer hasn&apos;t materialised this stream yet. If you just created
+        it, give the indexer a few seconds — refresh in ~5s. Otherwise make sure{' '}
+        <code className="font-mono text-cream">npm run indexer</code> is running
+        in another terminal.
+      </p>
+    );
   }
   if (events.length === 0) {
     return (
