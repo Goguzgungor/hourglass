@@ -23,12 +23,20 @@ fi
 
 ADMIN="$(stellar keys address "$IDENTITY")"
 
-# Friendbot may need a few retries while the network warms up
-for i in $(seq 1 10); do
-    if curl -s "http://localhost:8000/friendbot?addr=${ADMIN}" | grep -q '"hash"\|"_links"'; then
+# Friendbot may take a while to come up after quickstart launches.
+# Retry up to 60s — give up only if it never responds with success.
+for i in $(seq 1 30); do
+    STATUS="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000/friendbot?addr=${ADMIN}")"
+    if [ "$STATUS" = "200" ]; then
+        echo "==> Funded $ADMIN via Friendbot"
         break
     fi
-    sleep 1
+    # 400 means account already exists -> also fine
+    if [ "$STATUS" = "400" ]; then
+        echo "==> $ADMIN already funded"
+        break
+    fi
+    sleep 2
 done
 
 # Build artifacts (idempotent — re-runs are cheap)
@@ -44,7 +52,10 @@ if [ -z "$NATIVE_WRAPPED" ]; then
     # Already wrapped — fetch by querying the SAC id
     NATIVE_WRAPPED="$(stellar contract id asset \
         --network "$NETWORK_NAME" \
-        --source "$IDENTITY" \
+        --source-account "$IDENTITY" \
+        --asset native 2>/dev/null \
+        || stellar contract id asset \
+        --network "$NETWORK_NAME" \
         --asset native)"
 fi
 echo "Native XLM SAC: $NATIVE_WRAPPED"

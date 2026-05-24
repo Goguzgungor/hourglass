@@ -15,11 +15,14 @@ cargo build --target "$TARGET" --release -p hourglass-comptroller
 cargo build --target "$TARGET" --release -p hourglass-lockup
 
 mkdir -p "$DIST"
+# Clean prior outputs so re-runs don't double-optimize.
+rm -f "$DIST"/*.wasm
 cp "target/$TARGET/release/hourglass_comptroller.wasm" "$DIST/"
 cp "target/$TARGET/release/hourglass_lockup.wasm" "$DIST/"
 
 echo "==> Optimizing wasm"
-for f in "$DIST"/*.wasm; do
+# Glob only the originals, not the .optimized.wasm we produce.
+for f in "$DIST/hourglass_comptroller.wasm" "$DIST/hourglass_lockup.wasm"; do
     stellar contract optimize --wasm "$f"
 done
 
