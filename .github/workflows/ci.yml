@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace
+      - name: wasm build (comptroller first, then lockup)
+        run: |
+          cargo build --target wasm32v1-none --release -p hourglass-comptroller
+          cargo build --target wasm32v1-none --release -p hourglass-lockup
