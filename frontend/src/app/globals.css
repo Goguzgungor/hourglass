@@ -16,6 +16,15 @@
   --success: #5bcfd1;
   --warning: #ffc24d;
   --danger: #ff7a8f;
+
+  /* New: vibrant accents for the streaming-side UI. */
+  --teal: #5bcfd1;
+  --teal-bright: #84e3e5;
+  --teal-deep: #3aa9ab;
+  --violet: #8b7cf0;
+  --violet-deep: #5e4cb5;
+  --rose: #ff7a8f;
+  --rose-deep: #cf4f64;
 }
 
 /* ---------- Tailwind v4 theme wiring ---------- */
@@ -34,6 +43,13 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-teal: var(--teal);
+  --color-teal-bright: var(--teal-bright);
+  --color-teal-deep: var(--teal-deep);
+  --color-violet: var(--violet);
+  --color-violet-deep: var(--violet-deep);
+  --color-rose: var(--rose);
+  --color-rose-deep: var(--rose-deep);
 
   --font-display: var(--font-fraunces);
   --font-sans: var(--font-geist-sans);
@@ -203,4 +219,96 @@ hr.hairline {
 /* ---------- Numeric mono numerals ---------- */
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================ *
+ * STREAMING-SIDE animations — used by StreamRiver, AmountTile,
+ * ScheduleTimeline, WithdrawButton, LiveCounter.
+ * ================================================================ */
+
+/* River particles drifting left → right across a band. */
+@keyframes drift {
+  0% {
+    transform: translateX(-4%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  90% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(104%);
+    opacity: 0;
+  }
+}
+
+/* Pulsing glow halo around accent numbers / withdrawable band. */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Sheen wipe across a primary button on hover. */
+@keyframes sheen {
+  0% {
+    transform: translateX(-120%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(220%) skewX(-12deg);
+  }
+}
+
+/* Subtle vertical bob for the "now" indicator. */
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Slow horizontal sweep used for hovered progress bars. */
+@keyframes shimmer-x {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(180%);
+  }
+}
+
+/* Pulsing dot used in STREAMING status. */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+    opacity: 0.6;
+  }
+}
+
+/* Three-dot loading inside the WithdrawButton. */
+@keyframes load-dot {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.4);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }

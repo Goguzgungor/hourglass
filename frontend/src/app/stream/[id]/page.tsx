@@ -5,10 +5,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import Link from 'next/link';
-import HourglassIcon from '@/components/HourglassIcon';
 import { useWallet } from '@/lib/wallet-context';
 import { useToast } from '@/lib/toast';
 import { makeLockup } from '@/lib/sdk';
@@ -21,11 +21,18 @@ import {
 } from '@/lib/format';
 import type { Stream, StreamStatus } from 'hourglass/lockup';
 
+import StreamRiver from '@/components/StreamRiver';
+import ScheduleTimeline from '@/components/ScheduleTimeline';
+import AmountTile from '@/components/AmountTile';
+import LiveCounter from '@/components/LiveCounter';
+import WithdrawButton from '@/components/WithdrawButton';
+import StatusPill, { type StreamStatusTag } from '@/components/StatusPill';
+
 /* ----------------------------------------------------------------- *
  * Helpers                                                          *
  * ----------------------------------------------------------------- */
 
-type Status = 'PENDING' | 'STREAMING' | 'SETTLED' | 'CANCELED' | 'DEPLETED';
+type Status = StreamStatusTag;
 
 function statusTag(s: StreamStatus): Status {
   return s.tag.toUpperCase() as Status;
@@ -67,19 +74,15 @@ function StreamDetail({ streamId }: { streamId: number }) {
   const [stream, setStream] = useState<Stream | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [withdrawable, setWithdrawable] = useState<bigint>(0n);
+  const [withdrawableTs, setWithdrawableTs] = useState<number>(Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
 
-  // First load + reloader.
   const load = useCallback(async () => {
     try {
       const lockup = makeLockup(address);
       const streamTx = await lockup.get_stream({ stream_id: streamId });
       const s = streamTx.result as Stream | undefined;
-      // A non-existent stream id surfaces in several shapes depending on the
-      // contract's panic style and the SDK version: an HostError with code
-      // "Error(Contract, #30)", a thrown SDK simulation error, or an
-      // undefined/null result. Normalise all three to a NOT_FOUND view.
       if (!s || !s.token || !s.sender) {
         setMissing(true);
         return;
@@ -89,6 +92,7 @@ function StreamDetail({ streamId }: { streamId: number }) {
       setStream(s);
       setStatus(statusTag(statusTx.result));
       setWithdrawable(BigInt(wdTx.result));
+      setWithdrawableTs(Date.now());
       setMissing(false);
       setLoadError(null);
     } catch (err) {
@@ -110,7 +114,7 @@ function StreamDetail({ streamId }: { streamId: number }) {
     void load();
   }, [load]);
 
-  // Poll withdrawable amount every 3s while streaming.
+  // Poll withdrawable every 3s while streaming.
   useEffect(() => {
     if (!stream || status !== 'STREAMING') return;
     const handle = setInterval(async () => {
@@ -118,11 +122,11 @@ function StreamDetail({ streamId }: { streamId: number }) {
         const lockup = makeLockup(address);
         const wdTx = await lockup.withdrawable_amount({ stream_id: streamId });
         setWithdrawable(BigInt(wdTx.result));
-        // Also refresh status — it may transition to SETTLED while we poll.
+        setWithdrawableTs(Date.now());
         const statusTx = await lockup.status({ stream_id: streamId });
         setStatus(statusTag(statusTx.result));
       } catch {
-        /* transient — silent */
+        /* transient */
       }
     }, 3000);
     return () => clearInterval(handle);
@@ -138,6 +142,7 @@ function StreamDetail({ streamId }: { streamId: number }) {
       stream={stream}
       status={status}
       withdrawable={withdrawable}
+      withdrawableTs={withdrawableTs}
       reload={load}
     />
   );
@@ -152,38 +157,52 @@ function LoadedStream({
   stream,
   status,
   withdrawable,
+  withdrawableTs,
   reload,
 }: {
   streamId: number;
   stream: Stream;
   status: Status;
   withdrawable: bigint;
+  withdrawableTs: number;
   reload: () => Promise<void>;
 }) {
   const { address } = useWallet();
   const toast = useToast();
 
-  // Derive a 0..1 fraction of remaining (i.e. sand still in the top bulb).
-  const remainingFraction = useMemo(() => {
-    if (stream.deposited <= 0n) return 0;
-    const claimed = BigInt(stream.withdrawn) + BigInt(stream.refunded);
-    const remaining = BigInt(stream.deposited) - claimed;
-    if (remaining <= 0n) return 0;
-    const pct = Number((remaining * 10_000n) / BigInt(stream.deposited)) / 10_000;
-    return Math.max(0, Math.min(1, pct));
-  }, [stream]);
-
   const startTs = Number(stream.start_ts);
   const endTs = Number(stream.end_ts);
-  const cliffTs = Number(stream.shape.tag === 'Linear'
-    ? stream.shape.values[0].cliff_ts
-    : stream.start_ts);
-  const hasCliff =
-    stream.shape.tag === 'Linear' && cliffTs > startTs;
+  const cliffTs = Number(
+    stream.shape.tag === 'Linear'
+      ? stream.shape.values[0].cliff_ts
+      : stream.start_ts,
+  );
+  const hasCliff = stream.shape.tag === 'Linear' && cliffTs > startTs;
   const duration = Math.max(0, endTs - startTs);
 
   const isSender = !!address && address === stream.sender;
   const isRecipient = !!address && address === stream.recipient;
+
+  const deposited = BigInt(stream.deposited);
+  const withdrawn = BigInt(stream.withdrawn);
+  const refunded = BigInt(stream.refunded);
+  const streamed = withdrawn + withdrawable;
+  const remaining = deposited - withdrawn - refunded;
+
+  // Per-second rate (stroops/sec), used by LiveCounter for interpolation.
+  // For linear streams: deposited / (end_ts - cliff_ts).
+  const ratePerSec = useMemo(() => {
+    if (status !== 'STREAMING') return 0n;
+    const rateDenom =
+      stream.shape.tag === 'Linear'
+        ? Math.max(1, endTs - cliffTs)
+        : Math.max(1, endTs - startTs);
+    if (deposited <= 0n || rateDenom <= 0) return 0n;
+    return deposited / BigInt(rateDenom);
+  }, [deposited, endTs, cliffTs, startTs, stream.shape.tag, status]);
+
+  // Upper bound for the live counter: never project beyond what is owed.
+  const counterTarget = deposited - withdrawn;
 
   const [pendingAction, setPendingAction] = useState<
     null | 'withdraw' | 'cancel' | 'renounce'
@@ -270,10 +289,13 @@ function LoadedStream({
     stream.is_cancelable;
   const canRenounce = isSender && stream.is_cancelable;
 
+  const isCanceled = status === 'CANCELED' || stream.was_canceled === true;
+  const isDepleted = status === 'DEPLETED' || stream.is_depleted === true;
+
   return (
-    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-16 sm:pt-24 pb-16">
-      {/* Eyebrow + status */}
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 mb-6">
+    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-10 sm:pt-16 pb-16">
+      {/* Status row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5">
         <p className="eyebrow">
           <span className="text-sand">·</span>{' '}
           <span className="ml-1">Stream #{streamId}</span>{' '}
@@ -284,140 +306,209 @@ function LoadedStream({
       </div>
 
       {/* Headline */}
-      <h1 className="headline text-[clamp(2.5rem,6vw,5rem)] text-cream">
-        {formatStroops(stream.deposited)}
+      <h1 className="headline text-[clamp(2.25rem,5.5vw,4.5rem)] text-cream">
+        Streaming {formatStroops(deposited)}
         <span className="ml-3 font-mono text-base text-cream-dim uppercase tracking-[0.18em] not-italic">
           XLM
         </span>
       </h1>
-      <p className="mt-6 max-w-[640px] text-lg leading-relaxed text-cream-muted">
-        Streaming from{' '}
-        <span className="font-mono text-cream">
-          {truncAddress(stream.sender)}
-        </span>{' '}
-        to{' '}
-        <span className="font-mono text-cream">
-          {truncAddress(stream.recipient)}
-        </span>{' '}
-        over {formatDuration(duration)}.
+      <p className="mt-4 max-w-[760px] text-[15px] leading-relaxed text-cream-muted">
+        from{' '}
+        <CopyableAddress addr={stream.sender} />
+        {' '}to{' '}
+        <CopyableAddress addr={stream.recipient} />
+        {' '}over {formatDuration(duration)}.
       </p>
 
-      {/* Two-column grid: hourglass + key/value */}
-      <div className="mt-14 grid md:grid-cols-12 gap-x-10 gap-y-12">
-        {/* Left — hourglass */}
-        <div className="md:col-span-5 flex flex-col items-center md:items-start">
-          <div className="reveal">
-            <HourglassIcon size={240} fill={remainingFraction} animated />
-          </div>
-          <div className="mt-8 text-center md:text-left w-full">
-            <p className="eyebrow text-cream-dim mb-3">Withdrawable now</p>
-            <p className="headline text-5xl text-sand-bright leading-none">
-              {formatStroops(withdrawable)}
-              <span className="ml-3 font-mono text-xs text-cream-dim uppercase tracking-[0.18em] not-italic align-baseline">
-                XLM
-              </span>
-            </p>
-            {status === 'STREAMING' && (
-              <p className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-cream-dim">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inset-0 bg-success rounded-full animate-ping opacity-60" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
-                </span>
-                Live · updates every 3s
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Right — k/v list */}
-        <div className="md:col-span-7">
-          <Row label="Sender">
-            <CopyableAddress addr={stream.sender} />
-          </Row>
-          <Row label="Recipient">
-            <CopyableAddress addr={stream.recipient} />
-          </Row>
-          <Row label="Token">
-            <span className="font-mono text-xs text-cream-dim break-all">
-              {truncAddress(stream.token)}
-            </span>
-          </Row>
-          <Row label="Start">
-            <span className="font-mono text-sm text-cream">
-              {formatTimestamp(startTs)}
-            </span>
-          </Row>
-          <Row label="Cliff">
-            <span className="font-mono text-sm text-cream">
-              {hasCliff ? formatTimestamp(cliffTs) : '—'}
-            </span>
-          </Row>
-          <Row label="End">
-            <span className="font-mono text-sm text-cream">
-              {formatTimestamp(endTs)}
-            </span>
-          </Row>
-          <Row label="Deposited">
-            <span className="font-mono text-sm text-cream">
-              {formatStroops(stream.deposited)} XLM
-            </span>
-          </Row>
-          <Row label="Withdrawn so far">
-            <span className="font-mono text-sm text-cream">
-              {formatStroops(stream.withdrawn)} XLM
-            </span>
-          </Row>
-          <Row label="Refunded">
-            <span className="font-mono text-sm text-cream">
-              {formatStroops(stream.refunded)} XLM
-            </span>
-          </Row>
-          <Row label="Cancelable">
-            <Yesno value={stream.is_cancelable} />
-          </Row>
-          <Row label="Transferable" last>
-            <Yesno value={stream.is_transferable} />
-          </Row>
-        </div>
+      {/* Headline banner — StreamRiver */}
+      <div className="mt-10 reveal">
+        <StreamRiver
+          start_ts={startTs}
+          cliff_ts={cliffTs}
+          end_ts={endTs}
+          deposited={deposited}
+          withdrawn={withdrawn}
+          withdrawable={withdrawable}
+          refunded={refunded}
+          is_canceled={isCanceled}
+          is_depleted={isDepleted}
+        />
       </div>
 
-      {/* Actions */}
-      <div className="mt-16 border-t border-stroke pt-10">
-        <p className="eyebrow text-cream-dim mb-6">· Actions</p>
-        <div className="flex flex-col md:flex-row gap-3">
-          <ActionButton
-            variant="primary"
-            disabled={!canWithdraw || pendingAction !== null}
-            pending={pendingAction === 'withdraw'}
-            onClick={callWithdraw}
-          >
-            Withdraw {canWithdraw && `· ${formatStroops(withdrawable)} XLM`}
-          </ActionButton>
-          <ActionButton
-            variant="secondary"
-            disabled={!canCancel || pendingAction !== null}
-            pending={pendingAction === 'cancel'}
-            onClick={callCancel}
-          >
-            Cancel stream
-          </ActionButton>
-          <ActionButton
-            variant="tertiary"
-            disabled={!canRenounce || pendingAction !== null}
-            pending={pendingAction === 'renounce'}
-            onClick={() => setRenounceModal(true)}
-          >
-            Renounce cancelability
-          </ActionButton>
-        </div>
-        {!address && (
-          <p className="mt-4 text-xs text-cream-dim">
-            Connect a wallet to interact with this stream.
-          </p>
+      {/* Stats grid */}
+      <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 reveal" style={{ animationDelay: '80ms' }}>
+        <AmountTile
+          label="Deposited"
+          amount={formatStroops(deposited)}
+          accent="cream"
+          tooltip="Total amount locked when the stream was created."
+        />
+        <AmountTile
+          label="Streamed"
+          amount={formatStroops(streamed)}
+          accent="sand"
+          tooltip="What has unlocked so far, including already-withdrawn funds."
+        />
+        <AmountTile
+          label="Withdrawable now"
+          amount={formatStroops(withdrawable)}
+          accent="teal"
+          pulse
+          tooltip="Available for the recipient to claim right now."
+        />
+        <AmountTile
+          label="Withdrawn"
+          amount={formatStroops(withdrawn)}
+          accent="cream-muted"
+          tooltip="What the recipient has already pulled from the stream."
+        />
+        {refunded > 0n && (
+          <AmountTile
+            label="Refunded"
+            amount={formatStroops(refunded)}
+            accent="rose"
+            tooltip="Returned to the sender after a cancelation."
+          />
         )}
       </div>
 
-      {/* Events */}
+      {/* Schedule timeline */}
+      <div className="mt-8 reveal" style={{ animationDelay: '120ms' }}>
+        <ScheduleTimeline
+          start_ts={startTs}
+          cliff_ts={hasCliff ? cliffTs : startTs}
+          end_ts={endTs}
+        />
+      </div>
+
+      {/* Live counter + Withdraw */}
+      <section className="mt-12 grid md:grid-cols-12 gap-y-6 md:gap-x-10 items-end">
+        <div className="md:col-span-7">
+          <p className="eyebrow text-cream-dim mb-3">· Available to claim</p>
+          <LiveCounter
+            currentValue={withdrawable}
+            targetValue={counterTarget > 0n ? counterTarget : withdrawable}
+            rate={ratePerSec}
+            lastUpdateMs={withdrawableTs}
+            format={(n) => formatStroops(n)}
+          />
+          <p className="mt-3 font-mono text-xs text-cream-dim flex items-center gap-2">
+            <span className="text-teal-bright">+</span>
+            {formatStroops(ratePerSec)}{' '}
+            <span className="uppercase tracking-[0.18em] text-cream-dim/80">
+              XLM / sec
+            </span>
+            {status === 'STREAMING' && (
+              <>
+                <span className="text-stroke-2">·</span>
+                <span className="inline-flex items-center gap-1.5 text-teal-bright">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 bg-teal-bright rounded-full animate-ping opacity-60" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-teal-bright" />
+                  </span>
+                  Live
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="md:col-span-5 flex md:justify-end">
+          <WithdrawButton
+            variant="primary"
+            disabled={!canWithdraw || pendingAction !== null}
+            loading={pendingAction === 'withdraw'}
+            onClick={callWithdraw}
+          >
+            {canWithdraw
+              ? `Withdraw ${formatStroops(withdrawable)} XLM →`
+              : isRecipient
+                ? 'Nothing to withdraw yet'
+                : 'Recipient only'}
+          </WithdrawButton>
+        </div>
+      </section>
+
+      {/* Metadata grid */}
+      <section className="mt-16 border-t border-stroke pt-10">
+        <p className="eyebrow text-cream-dim mb-6">· Receipt</p>
+        <div className="grid md:grid-cols-2 gap-x-12 gap-y-0">
+          <Meta label="Sender">
+            <CopyableAddress addr={stream.sender} />
+          </Meta>
+          <Meta label="Recipient">
+            <CopyableAddress addr={stream.recipient} />
+          </Meta>
+          <Meta label="Token">
+            <span className="font-mono text-xs text-cream-dim break-all">
+              {truncAddress(stream.token)}
+            </span>
+          </Meta>
+          <Meta label="Stream ID">
+            <span className="font-mono text-xs text-cream">#{streamId}</span>
+          </Meta>
+          <Meta label="Start">
+            <span className="font-mono text-xs text-cream">
+              {formatTimestamp(startTs)}
+            </span>
+          </Meta>
+          <Meta label="End">
+            <span className="font-mono text-xs text-cream">
+              {formatTimestamp(endTs)}
+            </span>
+          </Meta>
+          <Meta label="Cliff">
+            <span className="font-mono text-xs text-cream">
+              {hasCliff ? formatTimestamp(cliffTs) : '— (no cliff)'}
+            </span>
+          </Meta>
+          <Meta label="Duration">
+            <span className="font-mono text-xs text-cream">
+              {formatDuration(duration)}
+            </span>
+          </Meta>
+          <Meta label="Cancelable">
+            <Yesno value={stream.is_cancelable} />
+          </Meta>
+          <Meta label="Transferable" last>
+            <Yesno value={stream.is_transferable} />
+          </Meta>
+        </div>
+      </section>
+
+      {/* Sender actions */}
+      {isSender && (
+        <section className="mt-16 border-t border-stroke pt-10">
+          <p className="eyebrow text-cream-dim mb-6">· Sender actions</p>
+          <div className="flex flex-col md:flex-row gap-3">
+            <WithdrawButton
+              variant="danger"
+              fullWidthMobile
+              disabled={!canCancel || pendingAction !== null}
+              loading={pendingAction === 'cancel'}
+              onClick={callCancel}
+            >
+              Cancel stream
+            </WithdrawButton>
+            <WithdrawButton
+              variant="secondary"
+              fullWidthMobile
+              disabled={!canRenounce || pendingAction !== null}
+              loading={pendingAction === 'renounce'}
+              onClick={() => setRenounceModal(true)}
+            >
+              Renounce cancelability
+            </WithdrawButton>
+          </div>
+        </section>
+      )}
+
+      {!address && (
+        <p className="mt-6 text-xs text-cream-dim">
+          Connect a wallet to interact with this stream.
+        </p>
+      )}
+
+      {/* Activity */}
       <EventsLog streamId={streamId} />
 
       {renounceModal && (
@@ -434,14 +525,14 @@ function LoadedStream({
             <button
               type="button"
               onClick={() => setRenounceModal(false)}
-              className="text-[11px] uppercase tracking-[0.18em] px-5 py-2 border border-stroke text-cream-dim hover:text-cream hover:border-cream-dim transition-colors"
+              className="text-[11px] uppercase tracking-[0.18em] px-5 py-2 border border-stroke text-cream-dim hover:text-cream hover:border-cream-dim transition-colors rounded-sm"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={callRenounce}
-              className="text-[11px] uppercase tracking-[0.18em] px-5 py-2 border border-warning text-warning hover:bg-warning/10 transition-colors"
+              className="text-[11px] uppercase tracking-[0.18em] px-5 py-2 border border-warning text-warning hover:bg-warning/10 transition-colors rounded-sm"
             >
               Renounce →
             </button>
@@ -456,38 +547,7 @@ function LoadedStream({
  * Subcomponents                                                    *
  * ----------------------------------------------------------------- */
 
-function StatusPill({ status }: { status: Status }) {
-  const styles: Record<Status, { color: string; pulse: boolean; line?: boolean }> = {
-    PENDING: { color: 'text-cream-dim border-cream-dim/40', pulse: false },
-    STREAMING: { color: 'text-sand-bright border-sand', pulse: true },
-    SETTLED: { color: 'text-success border-success/60', pulse: false },
-    CANCELED: { color: 'text-warning border-warning/60', pulse: false },
-    DEPLETED: {
-      color: 'text-cream-dim border-cream-dim/40',
-      pulse: false,
-      line: true,
-    },
-  };
-  const s = styles[status];
-  return (
-    <span
-      className={
-        'inline-flex items-center gap-2 border px-3 py-1 text-[10px] uppercase tracking-[0.22em] rounded-none ' +
-        s.color
-      }
-    >
-      {s.pulse && (
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inset-0 bg-sand rounded-full animate-ping opacity-70" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sand" />
-        </span>
-      )}
-      <span className={s.line ? 'line-through' : ''}>{status}</span>
-    </span>
-  );
-}
-
-function Row({
+function Meta({
   label,
   children,
   last,
@@ -499,12 +559,12 @@ function Row({
   return (
     <div
       className={
-        'grid grid-cols-[140px_1fr] items-baseline gap-x-6 py-3 ' +
+        'grid grid-cols-[120px_1fr] items-baseline gap-x-4 py-3 ' +
         (last ? '' : 'border-b border-stroke/40')
       }
     >
       <dt className="eyebrow text-cream-dim">{label}</dt>
-      <dd className="text-right md:text-left">{children}</dd>
+      <dd className="text-left">{children}</dd>
     </div>
   );
 }
@@ -514,7 +574,7 @@ function Yesno({ value }: { value: boolean }) {
     <span
       className={
         'font-mono text-xs uppercase tracking-[0.18em] ' +
-        (value ? 'text-sand-bright' : 'text-cream-dim')
+        (value ? 'text-teal-bright' : 'text-cream-dim')
       }
     >
       {value ? 'Yes' : 'No'}
@@ -524,11 +584,15 @@ function Yesno({ value }: { value: boolean }) {
 
 function CopyableAddress({ addr }: { addr: string }) {
   const [copied, setCopied] = useState(false);
-  const onCopy = async () => {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCopy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(addr);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       /* noop */
     }
@@ -538,52 +602,17 @@ function CopyableAddress({ addr }: { addr: string }) {
       type="button"
       onClick={onCopy}
       title={addr}
-      className="font-mono text-sm text-cream hover:text-sand-bright transition-colors inline-flex items-center gap-2"
+      className="font-mono text-xs text-cream hover:text-sand-bright transition-colors inline-flex items-center gap-2 align-baseline"
     >
       {truncAddress(addr)}
       <span
         className={
-          'text-[10px] uppercase tracking-[0.18em] ' +
-          (copied ? 'text-success' : 'text-cream-dim')
+          'text-[9px] uppercase tracking-[0.18em] ' +
+          (copied ? 'text-teal-bright' : 'text-cream-dim')
         }
       >
         {copied ? 'copied' : 'copy'}
       </span>
-    </button>
-  );
-}
-
-function ActionButton({
-  variant,
-  disabled,
-  pending,
-  onClick,
-  children,
-}: {
-  variant: 'primary' | 'secondary' | 'tertiary';
-  disabled?: boolean;
-  pending?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  const base =
-    'inline-flex items-center justify-center gap-2 px-6 py-3 text-[11px] uppercase tracking-[0.18em] font-medium rounded-none border transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex-1';
-  const styles = {
-    primary:
-      'bg-sand text-night border-sand hover:bg-sand-bright hover:border-sand-bright disabled:hover:bg-sand disabled:hover:border-sand',
-    secondary:
-      'text-sand border-sand/60 hover:border-sand hover:text-sand-bright hover:bg-sand/5',
-    tertiary:
-      'text-cream-dim border-stroke hover:border-cream-dim hover:text-cream',
-  } as const;
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`${base} ${styles[variant]}`}
-    >
-      {pending ? '…' : children}
     </button>
   );
 }
@@ -601,7 +630,7 @@ function Modal({
       onClick={onDismiss}
     >
       <div
-        className="max-w-[440px] w-full mx-6 bg-midnight border border-stroke p-8"
+        className="max-w-[440px] w-full mx-6 bg-midnight border border-stroke p-8 rounded-sm"
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -631,7 +660,6 @@ function EventsLog({ streamId }: { streamId: number }) {
       try {
         const { rpc } = await import('@stellar/stellar-sdk');
         const server = new rpc.Server(DEPLOYMENT.rpcUrl, { allowHttp: true });
-        // Try a generous backwindow — Soroban RPC keeps recent ledgers only.
         const latest = await server.getLatestLedger();
         const startLedger = Math.max(1, latest.sequence - 200_000);
         const res = await server.getEvents({
@@ -645,7 +673,6 @@ function EventsLog({ streamId }: { streamId: number }) {
           limit: 200,
         });
         if (cancelled) return;
-        // Decode topics to names — first topic is usually a symbol like "created".
         const { scValToNative } = await import('@stellar/stellar-sdk');
         const rows: EventRow[] = res.events
           .map((ev) => {
@@ -657,16 +684,12 @@ function EventsLog({ streamId }: { streamId: number }) {
               }
             });
             const kind = String(decodedTopics[0] ?? '?');
-            // Heuristic: stream id is typically among the topics or in the value.
-            // We surface every event for the contract; per-stream filtering would
-            // need decoded value parsing. For MVP, tag the row with the kind.
             let value: unknown = null;
             try {
               value = scValToNative(ev.value);
             } catch {
               /* noop */
             }
-            // Try to find the streamId in topics or value.
             const inTopics = decodedTopics.some(
               (t) => typeof t === 'number' && t === streamId,
             );
@@ -695,10 +718,10 @@ function EventsLog({ streamId }: { streamId: number }) {
   }, [streamId]);
 
   return (
-    <div className="mt-16 border-t border-stroke pt-10">
-      <p className="eyebrow text-cream-dim mb-6">· Events</p>
+    <section className="mt-16 border-t border-stroke pt-10">
+      <p className="eyebrow text-cream-dim mb-6">· Activity</p>
       {error && (
-        <p className="font-mono text-xs text-danger border-l-2 border-danger pl-4 py-2">
+        <p className="font-mono text-xs text-rose border-l-2 border-rose pl-4 py-2">
           RPC error: {error}
         </p>
       )}
@@ -726,7 +749,7 @@ function EventsLog({ streamId }: { streamId: number }) {
                   second: '2-digit',
                 })}
               </span>
-              <span className="eyebrow text-sand">{ev.kind}</span>
+              <span className="eyebrow text-teal-bright">{ev.kind}</span>
               <span className="font-mono text-xs text-cream-dim break-all">
                 tx {ev.txHash.slice(0, 8)}…
               </span>
@@ -734,7 +757,7 @@ function EventsLog({ streamId }: { streamId: number }) {
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -788,7 +811,7 @@ function NoDeploymentView() {
 function RpcErrorView({ message }: { message: string }) {
   return (
     <div className="mx-auto max-w-[720px] px-6 sm:px-10 pt-32">
-      <div className="border border-warning/40 bg-warning/5 px-6 py-5">
+      <div className="border border-warning/40 bg-warning/5 px-6 py-5 rounded-sm">
         <p className="eyebrow text-warning mb-3">· RPC unreachable</p>
         <p className="text-sm text-cream-muted leading-relaxed">
           Could not reach{' '}
@@ -804,24 +827,20 @@ function RpcErrorView({ message }: { message: string }) {
 
 function SkeletonView({ id }: { id: number }) {
   return (
-    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-24">
+    <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-16">
       <p className="eyebrow">
         <span className="text-sand">·</span>{' '}
         <span className="ml-1">Stream #{id}</span>{' '}
         <span className="mx-2 text-stroke-2">/</span> loading…
       </p>
-      <div className="mt-12 grid md:grid-cols-12 gap-x-10">
-        <div className="md:col-span-5 flex justify-center md:justify-start opacity-40">
-          <HourglassIcon size={240} fill={0.5} animated />
-        </div>
-        <div className="md:col-span-7 space-y-3 mt-8 md:mt-0">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-6 border-b border-stroke/40 animate-pulse bg-stroke/20"
-            />
-          ))}
-        </div>
+      <div className="mt-10 h-[280px] border border-stroke bg-midnight/50 animate-pulse rounded-sm" />
+      <div className="mt-6 grid grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-24 border border-stroke bg-midnight/40 animate-pulse rounded-sm"
+          />
+        ))}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import {
   truncAddress,
   unixToDatetimeLocal,
 } from '@/lib/format';
+import StreamRiver from '@/components/StreamRiver';
 
 /* ----------------------------------------------------------------- *
  * Defaults — recomputed once at mount so we don't churn the form.   *
@@ -155,7 +156,8 @@ export default function CreateStreamPage() {
 
   return (
     <div className="mx-auto max-w-[1280px] px-6 sm:px-10 pt-16 sm:pt-24">
-      <div className="max-w-[720px] mx-auto">
+      <div className="grid md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_420px] gap-x-10 gap-y-10 items-start">
+        <div className="max-w-[720px]">
         {/* Eyebrow + headline */}
         <p className="eyebrow mb-8">
           <span className="text-sand">·</span>{' '}
@@ -341,7 +343,86 @@ export default function CreateStreamPage() {
             </button>
           )}
         </form>
+        </div>
+
+        {/* Right-side preview pane — md+ only */}
+        <aside className="hidden md:block md:sticky md:top-32">
+          <p className="eyebrow text-cream-dim mb-4">· Preview</p>
+          <PreviewPane
+            parsed={parsed.ok ? parsed : null}
+            recipient={recipient}
+          />
+          <p className="mt-4 text-[11px] text-cream-dim/80 leading-relaxed">
+            A sketch of the river the recipient will see — bands update as you
+            edit the schedule.
+          </p>
+        </aside>
       </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- *
+ * Preview pane — a gray-toned StreamRiver mockup of the form spec  *
+ * ----------------------------------------------------------------- */
+
+function PreviewPane({
+  parsed,
+  recipient,
+}: {
+  parsed: {
+    depositStroops: bigint;
+    startTs: number;
+    cliffTs: number;
+    endTs: number;
+    duration: number;
+  } | null;
+  recipient: string;
+}) {
+  // Use a 5-minute fallback window so the river still renders something
+  // even before the user has filled in valid values.
+  const fallbackStart = Math.floor(Date.now() / 1000);
+  const start = parsed?.startTs ?? fallbackStart;
+  const cliff = parsed?.cliffTs ?? start;
+  const end = parsed?.endTs ?? start + 300;
+  const deposit = parsed?.depositStroops ?? 10_000_000n;
+
+  return (
+    <div className="space-y-4">
+      <div className="opacity-90">
+        <StreamRiver
+          start_ts={start}
+          cliff_ts={cliff}
+          end_ts={end > start ? end : start + 60}
+          deposited={deposit}
+          withdrawn={0n}
+          withdrawable={0n}
+          height={180}
+          compact
+        />
+      </div>
+      <dl className="grid grid-cols-2 gap-y-2 text-[11px] font-mono">
+        <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
+          To
+        </dt>
+        <dd className="text-cream truncate">
+          {recipient ? truncAddress(recipient) : '—'}
+        </dd>
+        <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
+          Deposit
+        </dt>
+        <dd className="text-sand-bright">
+          {parsed ? `${formatStroops(parsed.depositStroops)} XLM` : '—'}
+        </dd>
+        <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
+          Duration
+        </dt>
+        <dd className="text-teal-bright">
+          {parsed && parsed.duration > 0
+            ? formatDuration(parsed.duration)
+            : '—'}
+        </dd>
+      </dl>
     </div>
   );
 }

@@ -8,8 +8,9 @@ import {
   type ReactNode,
 } from 'react';
 import Link from 'next/link';
-import HourglassIcon from '@/components/HourglassIcon';
 import WalletButton from '@/components/WalletButton';
+import AmountTile from '@/components/AmountTile';
+import StatusPill, { type StreamStatusTag } from '@/components/StatusPill';
 import { useWallet } from '@/lib/wallet-context';
 import {
   formatStroops,
@@ -19,10 +20,7 @@ import {
 import type { StreamDoc } from '@/lib/db';
 
 /* ----------------------------------------------------------------- *
- * Types — the dashboard talks to Mongo via /api/streams + /api/stats *
- * so we use the canonical StreamDoc shape but cast through `unknown`  *
- * because the API serializes numbers as numbers and i128s as decimal  *
- * strings (i.e. exactly what StreamDoc declares).                     *
+ * Types                                                            *
  * ----------------------------------------------------------------- */
 
 interface StatsResponse {
@@ -32,12 +30,7 @@ interface StatsResponse {
   locked: string;
 }
 
-type Status =
-  | 'PENDING'
-  | 'STREAMING'
-  | 'SETTLED'
-  | 'CANCELED'
-  | 'DEPLETED';
+type Status = StreamStatusTag;
 
 function deriveStatus(s: StreamDoc, nowSec: number): Status {
   if (s.is_depleted) return 'DEPLETED';
@@ -47,17 +40,14 @@ function deriveStatus(s: StreamDoc, nowSec: number): Status {
   return 'STREAMING';
 }
 
-function remainingFraction(s: StreamDoc): number {
+/** Proportion of the deposit that has streamed already, clamped to [0,1]. */
+function streamedFraction(s: StreamDoc, nowSec: number): number {
   try {
     const dep = BigInt(s.deposited);
     if (dep <= 0n) return 0;
-    const claimed = BigInt(s.withdrawn) + BigInt(s.refunded);
-    const remaining = dep - claimed;
-    if (remaining <= 0n) return 0;
-    return Math.max(
-      0,
-      Math.min(1, Number((remaining * 10_000n) / dep) / 10_000),
-    );
+    const duration = Math.max(1, s.end_ts - s.start_ts);
+    const elapsed = Math.min(duration, Math.max(0, nowSec - s.start_ts));
+    return elapsed / duration;
   } catch {
     return 0;
   }
@@ -80,7 +70,11 @@ export default function DashboardPage(): ReactNode {
         </p>
       </div>
 
-      {!address ? <DisconnectedView pending={pending} /> : <ConnectedView address={address} />}
+      {!address ? (
+        <DisconnectedView pending={pending} />
+      ) : (
+        <ConnectedView address={address} />
+      )}
     </div>
   );
 }
@@ -117,7 +111,9 @@ function ConnectedView({ address }: { address: string }): ReactNode {
   const [incoming, setIncoming] = useState<StreamDoc[] | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
+  const [nowSec, setNowSec] = useState<number>(() =>
+    Math.floor(Date.now() / 1000),
+  );
 
   const load = useCallback(async () => {
     try {
@@ -142,15 +138,12 @@ function ConnectedView({ address }: { address: string }): ReactNode {
     }
   }, [address]);
 
-  // Initial fetch + periodic refresh (the indexer updates Mongo every few
-  // seconds, so re-polling the API keeps the dashboard ~live).
   useEffect(() => {
     void load();
     const handle = setInterval(() => void load(), 5_000);
     return () => clearInterval(handle);
   }, [load]);
 
-  // A separate, fast tick just for re-deriving STREAMING/SETTLED labels.
   useEffect(() => {
     const handle = setInterval(
       () => setNowSec(Math.floor(Date.now() / 1000)),
@@ -168,7 +161,7 @@ function ConnectedView({ address }: { address: string }): ReactNode {
       <StatsStrip stats={stats} />
 
       {error && (
-        <div className="mt-8 border border-warning/40 bg-warning/5 px-5 py-4">
+        <div className="mt-8 border border-warning/40 bg-warning/5 px-5 py-4 rounded-sm">
           <p className="eyebrow text-warning mb-2">· Indexer offline?</p>
           <p className="text-xs text-cream-muted leading-relaxed">
             Could not reach the indexer API. Make sure the indexer is running
@@ -181,7 +174,6 @@ function ConnectedView({ address }: { address: string }): ReactNode {
         </div>
       )}
 
-      {/* Two columns */}
       <div className="mt-14 grid md:grid-cols-2 md:divide-x md:divide-stroke gap-y-12">
         <Column
           label="Outgoing"
@@ -190,7 +182,6 @@ function ConnectedView({ address }: { address: string }): ReactNode {
           loading={loading}
           nowSec={nowSec}
           side="sender"
-          address={address}
         />
         <Column
           label="Incoming"
@@ -199,7 +190,6 @@ function ConnectedView({ address }: { address: string }): ReactNode {
           loading={loading}
           nowSec={nowSec}
           side="recipient"
-          address={address}
         />
       </div>
 
@@ -209,47 +199,31 @@ function ConnectedView({ address }: { address: string }): ReactNode {
 }
 
 /* ----------------------------------------------------------------- *
- * Stats strip                                                      *
+ * Stats strip — now uses AmountTile for visual consistency.        *
  * ----------------------------------------------------------------- */
 
 function StatsStrip({ stats }: { stats: StatsResponse | null }): ReactNode {
   return (
-    <div className="grid grid-cols-3 border-t border-b border-stroke divide-x divide-stroke">
-      <Stat
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <AmountTile
         label="Indexed"
-        value={stats === null ? '—' : String(stats.total)}
-        kicker="streams"
+        amount={stats === null ? '—' : String(stats.total)}
+        unit="streams"
+        accent="cream"
       />
-      <Stat
+      <AmountTile
         label="In flight"
-        value={stats === null ? '—' : String(stats.active)}
-        kicker="active"
+        amount={stats === null ? '—' : String(stats.active)}
+        unit="active"
+        accent="teal"
+        pulse={stats !== null && stats.active > 0}
       />
-      <Stat
+      <AmountTile
         label="Locked"
-        value={stats === null ? '—' : formatStroops(stats.locked)}
-        kicker="XLM"
+        amount={stats === null ? '—' : formatStroops(stats.locked)}
+        unit="XLM"
+        accent="sand"
       />
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  kicker,
-}: {
-  label: string;
-  value: string;
-  kicker: string;
-}): ReactNode {
-  return (
-    <div className="py-6 px-6 first:pl-0 last:pr-0">
-      <p className="eyebrow text-cream-dim mb-3">{label}</p>
-      <p className="font-mono text-2xl text-cream tabular">{value}</p>
-      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-cream-dim/70">
-        {kicker}
-      </p>
     </div>
   );
 }
@@ -265,7 +239,6 @@ function Column({
   loading,
   nowSec,
   side,
-  address,
 }: {
   label: string;
   subLabel: string;
@@ -273,7 +246,6 @@ function Column({
   loading: boolean;
   nowSec: number;
   side: 'sender' | 'recipient';
-  address: string;
 }): ReactNode {
   return (
     <section className="md:px-8 first:md:pl-0 last:md:pr-0">
@@ -300,7 +272,6 @@ function Column({
               stream={s}
               nowSec={nowSec}
               side={side}
-              address={address}
             />
           ))}
         </ul>
@@ -315,16 +286,11 @@ function RowSkeletons(): ReactNode {
       {Array.from({ length: 3 }).map((_, i) => (
         <li
           key={i}
-          className="grid grid-cols-[1fr_56px] gap-x-4 items-center py-5 border-b border-stroke/40"
+          className="py-5 border-b border-stroke/40 space-y-3"
         >
-          <div className="space-y-2">
-            <div className="h-3 w-32 bg-stroke/30 animate-pulse" />
-            <div className="h-5 w-44 bg-stroke/30 animate-pulse" />
-            <div className="h-3 w-56 bg-stroke/20 animate-pulse" />
-          </div>
-          <div className="opacity-30 justify-self-end">
-            <HourglassIcon size={36} fill={0.5} animated={false} />
-          </div>
+          <div className="h-3 w-44 bg-stroke/30 animate-pulse rounded-sm" />
+          <div className="h-6 w-56 bg-stroke/30 animate-pulse rounded-sm" />
+          <div className="h-2 w-full bg-stroke/20 animate-pulse rounded-sm" />
         </li>
       ))}
     </ul>
@@ -335,22 +301,18 @@ function StreamRow({
   stream,
   nowSec,
   side,
-  address: _address,
 }: {
   stream: StreamDoc;
   nowSec: number;
   side: 'sender' | 'recipient';
-  address: string;
 }): ReactNode {
   const status = deriveStatus(stream, nowSec);
-  const fraction = useMemo(() => remainingFraction(stream), [stream]);
+  const fraction = useMemo(() => streamedFraction(stream, nowSec), [stream, nowSec]);
 
-  // Counter-party (we already know one side is `address`).
   const counterparty =
     side === 'sender' ? stream.recipient : stream.sender;
   const counterpartyLabel = side === 'sender' ? 'to' : 'from';
 
-  // Time hint depends on status.
   let timeHint = '';
   if (status === 'PENDING') {
     timeHint = `starts in ${formatDuration(stream.start_ts - nowSec)}`;
@@ -364,72 +326,96 @@ function StreamRow({
     timeHint = 'depleted';
   }
 
-  const modelBadge =
-    stream.model === 'Linear' ? 'LINEAR' : 'TRANCHED';
+  const modelBadge = stream.model === 'Linear' ? 'LINEAR' : 'TRANCHED';
+
+  // Time hint has a mono live segment in the STREAMING/PENDING case.
+  const splitHint = timeHint.match(/^(.*?)(\d+[a-z][a-z\s\d]*[a-z])$/);
+  const hintPrefix = splitHint?.[1] ?? timeHint;
+  const hintMono = splitHint?.[2] ?? '';
+
+  // Pill color for the progress bar's filled portion
+  const barFill =
+    status === 'CANCELED'
+      ? 'bg-rose'
+      : status === 'STREAMING'
+        ? 'bg-gradient-to-r from-sand-deep to-sand-bright'
+        : status === 'SETTLED'
+          ? 'bg-teal-deep'
+          : status === 'DEPLETED'
+            ? 'bg-stroke-2'
+            : 'bg-stroke-2';
 
   return (
     <li className="border-b border-stroke/40">
       <Link
         href={`/stream/${stream._id}`}
         className="
-          group grid grid-cols-[1fr_56px] gap-x-4 items-center py-5
-          transition-colors hover:bg-sand/[0.03]
+          group block py-5 px-2 -mx-2 rounded-sm
+          transition-colors hover:bg-midnight-2/70
         "
       >
-        <div className="min-w-0">
-          <p className="eyebrow text-cream-dim mb-2 flex flex-wrap items-center gap-x-2">
-            <span className="text-sand">·</span>
-            <span>Stream #{stream._id}</span>
-            <span className="text-stroke-2">/</span>
-            <span>{modelBadge}</span>
-            <span className="text-stroke-2">/</span>
-            <StatusInline status={status} />
-          </p>
-
-          {stream.model === 'Linear' ? (
-            <p className="font-mono text-xl text-cream tabular truncate">
-              {formatStroops(stream.deposited)}
-              <span className="ml-2 text-[10px] uppercase tracking-[0.18em] text-cream-dim">
-                XLM
-              </span>
+        <div className="grid grid-cols-[1fr_auto] gap-x-4 items-start">
+          <div className="min-w-0">
+            <p className="eyebrow text-cream-dim mb-2 flex flex-wrap items-center gap-x-2">
+              <span className="text-sand">·</span>
+              <span>Stream #{stream._id}</span>
+              <span className="text-stroke-2">/</span>
+              <span>{modelBadge}</span>
             </p>
-          ) : (
-            <p className="headline-roman text-xl text-cream italic">
-              Tranched stream
-            </p>
-          )}
 
-          <p className="mt-2 text-[12px] text-cream-muted truncate">
-            {counterpartyLabel}{' '}
-            <span className="font-mono text-cream">
-              {truncAddress(counterparty)}
-            </span>{' '}
-            <span className="text-stroke-2">·</span>{' '}
-            <span className="text-cream-dim">{timeHint}</span>
-          </p>
+            {stream.model === 'Linear' ? (
+              <p className="font-mono text-xl text-cream tabular truncate">
+                {formatStroops(stream.deposited)}
+                <span className="ml-2 text-[10px] uppercase tracking-[0.18em] text-cream-dim">
+                  XLM
+                </span>
+              </p>
+            ) : (
+              <p className="headline-roman text-xl text-cream italic">
+                Tranched stream
+              </p>
+            )}
+
+            <p className="mt-2 text-[12px] text-cream-muted truncate">
+              {counterpartyLabel}{' '}
+              <span className="font-mono text-cream">
+                {truncAddress(counterparty)}
+              </span>{' '}
+              <span className="text-stroke-2">·</span>{' '}
+              <span className="text-cream-dim">{hintPrefix}</span>
+              {hintMono && (
+                <span className="font-mono tabular text-cream">{hintMono}</span>
+              )}
+            </p>
+          </div>
+
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <StatusPill status={status} size="sm" />
+          </div>
         </div>
 
-        <div className="justify-self-end opacity-90 group-hover:opacity-100 transition-opacity">
-          <HourglassIcon
-            size={36}
-            fill={fraction}
-            animated={status === 'STREAMING'}
+        {/* Progress bar */}
+        <div className="relative mt-4 h-2 w-full bg-night border border-stroke overflow-hidden rounded-sm">
+          <div
+            className={'absolute inset-y-0 left-0 ' + barFill}
+            style={{ width: `${Math.round(fraction * 100)}%` }}
+          />
+          {/* Hover sheen */}
+          <div
+            aria-hidden
+            className="
+              pointer-events-none absolute inset-y-0 left-0 w-1/4
+              bg-gradient-to-r from-transparent via-white/30 to-transparent
+              opacity-0 group-hover:opacity-100
+            "
+            style={{
+              animation: 'shimmer-x 1.4s ease-out infinite',
+            }}
           />
         </div>
       </Link>
     </li>
   );
-}
-
-function StatusInline({ status }: { status: Status }): ReactNode {
-  const tone: Record<Status, string> = {
-    PENDING: 'text-cream-dim',
-    STREAMING: 'text-sand-bright',
-    SETTLED: 'text-success',
-    CANCELED: 'text-warning',
-    DEPLETED: 'text-cream-dim line-through',
-  };
-  return <span className={tone[status]}>{status}</span>;
 }
 
 /* ----------------------------------------------------------------- *
