@@ -398,16 +398,24 @@ function LoadedStream({
   const refunded = BigInt(stream.refunded);
   const streamed = withdrawn + withdrawable;
 
-  // Per-second rate (stroops/sec).
+  // Per-second linear rate (stroops/sec). For Linear: net deposit minus
+  // lump-sum unlocks, divided by the vesting span [cliff, end). For Tranched:
+  // average rate over the full window — informational only since tranched
+  // streams emit in discrete jumps, not continuously.
   const ratePerSec = useMemo(() => {
     if (status !== 'STREAMING') return 0n;
-    const rateDenom =
-      stream.shape.tag === 'Linear'
-        ? Math.max(1, endTs - cliffTs)
-        : Math.max(1, endTs - startTs);
-    if (deposited <= 0n || rateDenom <= 0) return 0n;
-    return deposited / BigInt(rateDenom);
-  }, [deposited, endTs, cliffTs, startTs, stream.shape.tag, status]);
+    if (stream.shape.tag === 'Linear') {
+      const span = Math.max(1, endTs - cliffTs);
+      const unlockStart = BigInt(stream.shape.values[0].unlock_at_start);
+      const unlockCliff = BigInt(stream.shape.values[0].unlock_at_cliff);
+      const base = deposited - unlockStart - unlockCliff;
+      if (base <= 0n) return 0n;
+      return base / BigInt(span);
+    }
+    const span = Math.max(1, endTs - startTs);
+    if (deposited <= 0n) return 0n;
+    return deposited / BigInt(span);
+  }, [deposited, endTs, cliffTs, startTs, stream.shape, status]);
 
   const [pendingAction, setPendingAction] = useState<
     null | 'withdraw' | 'cancel' | 'renounce' | 'transfer'
@@ -672,8 +680,22 @@ function LoadedStream({
               cliff_ts={hasCliff ? cliffTs : startTs}
               end_ts={endTs}
               status={status}
-              rate={ratePerSec}
-              lastUpdateMs={withdrawableTs}
+              shape={
+                stream.shape.tag === 'Linear'
+                  ? {
+                      tag: 'Linear',
+                      cliff_ts: Number(stream.shape.values[0].cliff_ts),
+                      unlock_at_start: BigInt(stream.shape.values[0].unlock_at_start),
+                      unlock_at_cliff: BigInt(stream.shape.values[0].unlock_at_cliff),
+                    }
+                  : {
+                      tag: 'Tranched',
+                      tranches: stream.shape.values[0].tranches.map((t) => ({
+                        amount: BigInt(t.amount),
+                        ts: Number(t.ts),
+                      })),
+                    }
+              }
               tokenSymbol="XLM"
             />
           </div>
@@ -1472,6 +1494,20 @@ function dotClass(kind: string): string {
   return 'bg-cream-dim';
 }
 
+/** Build a Stellar Expert tx URL for the active network — returns null on
+ *  unknown / local networks where no public explorer applies. */
+function explorerTxHref(txHash: string): string | null {
+  if (!txHash) return null;
+  const passphrase = DEPLOYMENT.networkPassphrase ?? '';
+  if (passphrase.includes('Public Global Stellar')) {
+    return `https://stellar.expert/explorer/public/tx/${txHash}`;
+  }
+  if (passphrase.includes('Test SDF')) {
+    return `https://stellar.expert/explorer/testnet/tx/${txHash}`;
+  }
+  return null;
+}
+
 function EventsLog({ streamId }: { streamId: number }) {
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1621,8 +1657,31 @@ function EventsLog({ streamId }: { streamId: number }) {
                 second: '2-digit',
               })}
             </p>
-            <p className="mt-1 font-mono text-[10px] text-cream-dim/70">
-              tx {ev.txHash.slice(0, 8)}…
+            <p className="mt-1">
+              {(() => {
+                const href = explorerTxHref(ev.txHash);
+                const label = (
+                  <>
+                    tx {ev.txHash.slice(0, 8)}…
+                    <span aria-hidden className="ml-1 text-cream-dim/60">↗</span>
+                  </>
+                );
+                return href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[10px] text-cream-dim/70 hover:text-sand-bright transition-colors underline-offset-2 hover:underline"
+                    title="Open transaction on Stellar Expert"
+                  >
+                    {label}
+                  </a>
+                ) : (
+                  <span className="font-mono text-[10px] text-cream-dim/70">
+                    tx {ev.txHash.slice(0, 8)}…
+                  </span>
+                );
+              })()}
             </p>
           </div>
         </li>

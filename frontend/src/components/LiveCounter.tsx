@@ -2,63 +2,177 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+/* ---------------- Schedule shape ---------------- */
+
+export type StreamShape =
+  | {
+      tag: 'Linear';
+      cliff_ts: number;
+      unlock_at_start: bigint;
+      unlock_at_cliff: bigint;
+    }
+  | {
+      tag: 'Tranched';
+      tranches: Array<{ amount: bigint; ts: number }>;
+    };
+
 type Props = {
-  /** Most-recent known withdrawable balance (in stroops). */
-  currentValue: bigint;
-  /** Upper bound; rendered value never exceeds this. */
-  targetValue: bigint;
-  /**
-   * Per-second emission rate, in stroops/sec. Computed by the parent from the
-   * stream params (`deposited / (end_ts - cliff_ts)`).
-   */
-  rate: bigint;
-  /** When (in ms since epoch) `currentValue` was observed. */
-  lastUpdateMs: number;
-  /** Formatter for the displayed number (e.g. stroops → "1.2345678"). */
+  /** Full vesting shape (Linear with optional cliff + unlocks, or Tranched). */
+  shape: StreamShape;
+  startTs: number;
+  endTs: number;
+  /** Total deposit in stroops. */
+  deposited: bigint;
+  /** Amount the recipient has already pulled. */
+  withdrawn: bigint;
+  /** Derived status. Frozen statuses (PENDING / SETTLED / CANCELED / DEPLETED)
+   *  pin the display to `fallbackValue`; STREAMING projects from the schedule. */
+  status: 'PENDING' | 'STREAMING' | 'SETTLED' | 'CANCELED' | 'DEPLETED';
+  /** Most-recent on-chain withdrawable from the poll loop — used as the
+   *  frozen value in non-STREAMING phases. */
+  fallbackValue: bigint;
+  /** Formatter for the displayed number (stroops → readable). */
   format: (n: bigint) => string;
   /** Optional className override for the digits element. */
   className?: string;
 };
 
+/* ---------------- Pure schedule math (mirror of contract `streamed_amount`) ---------------- */
+
 /**
- * LiveCounter — a number that ticks up smoothly via requestAnimationFrame
- * interpolation. The parent polls the contract every few seconds; in between,
- * this component projects the value forward using the per-second rate.
+ * Cumulative streamed amount at `nowMs` (millisecond precision).
  *
- * Capped at `targetValue` to avoid drifting past the actual balance.
+ * Semantics match `contracts/shared/src/math.rs`:
+ *   - before start:           0
+ *   - in [start, cliff):      unlock_at_start (frozen — NO linear ramp here)
+ *   - at cliff:               unlock_at_start + unlock_at_cliff
+ *   - in (cliff, end):        + (deposited - unlocks) * (now - cliff) / (end - cliff)
+ *   - at or after end:        deposited
+ *
+ * For Tranched: sum of tranches whose ts <= now.
+ */
+function streamedAtMs(
+  shape: StreamShape,
+  startTs: number,
+  endTs: number,
+  deposited: bigint,
+  nowMs: number,
+): bigint {
+  const startMs = startTs * 1000;
+  const endMs = endTs * 1000;
+  if (nowMs < startMs) return 0n;
+  if (nowMs >= endMs) return deposited;
+
+  if (shape.tag === 'Linear') {
+    const cliffMs = shape.cliff_ts * 1000;
+    if (nowMs < cliffMs) return shape.unlock_at_start;
+    const base = deposited - shape.unlock_at_start - shape.unlock_at_cliff;
+    if (base <= 0n) {
+      return shape.unlock_at_start + shape.unlock_at_cliff;
+    }
+    const elapsedMs = BigInt(nowMs - cliffMs);
+    const spanMs = BigInt(endMs - cliffMs);
+    if (spanMs <= 0n) return deposited;
+    const portion = (base * elapsedMs) / spanMs;
+    return shape.unlock_at_start + shape.unlock_at_cliff + portion;
+  }
+
+  // Tranched
+  let acc = 0n;
+  for (const t of shape.tranches) {
+    if (t.ts * 1000 > nowMs) break;
+    acc += t.amount;
+  }
+  return acc;
+}
+
+/* ---------------- Component ---------------- */
+
+/**
+ * LiveCounter — renders the recipient's current claimable balance, smoothly
+ * ticking forward via requestAnimationFrame.
+ *
+ * Self-contained: takes the full schedule and recomputes the value from
+ * first principles each frame. No "rate" prop needed; cliff/end transitions
+ * are handled correctly without parent intervention. In frozen phases
+ * (PENDING / SETTLED / CANCELED / DEPLETED) it pins to `fallbackValue` from
+ * the last poll.
  */
 export default function LiveCounter({
-  currentValue,
-  targetValue,
-  rate,
-  lastUpdateMs,
+  shape,
+  startTs,
+  endTs,
+  deposited,
+  withdrawn,
+  status,
+  fallbackValue,
   format,
   className,
 }: Props) {
-  const [display, setDisplay] = useState<bigint>(currentValue);
+  const [display, setDisplay] = useState<bigint>(fallbackValue);
   const rafRef = useRef<number | null>(null);
 
-  // Always restart the rAF loop when the upstream sample changes so we
-  // continue interpolating from the freshest known point.
+  // Stash the latest props in a ref so the rAF loop reads fresh values
+  // without restarting whenever any prop changes (which would visibly stutter).
+  const latestRef = useRef({
+    shape,
+    startTs,
+    endTs,
+    deposited,
+    withdrawn,
+    fallbackValue,
+    status,
+  });
+  latestRef.current = {
+    shape,
+    startTs,
+    endTs,
+    deposited,
+    withdrawn,
+    fallbackValue,
+    status,
+  };
+
   useEffect(() => {
     let cancelled = false;
 
     const tick = () => {
       if (cancelled) return;
-      const deltaMs = Math.max(0, Date.now() - lastUpdateMs);
-      const accruedMicro = (rate * BigInt(Math.floor(deltaMs))) / 1000n;
-      let projected = currentValue + accruedMicro;
-      if (projected > targetValue) projected = targetValue;
-      setDisplay(projected);
+      const s = latestRef.current;
+
+      if (
+        s.status === 'CANCELED' ||
+        s.status === 'DEPLETED' ||
+        s.status === 'PENDING' ||
+        s.status === 'SETTLED'
+      ) {
+        // Frozen phases: trust the on-chain value (no projection).
+        setDisplay(s.fallbackValue);
+      } else {
+        // STREAMING: project from the schedule directly.
+        const streamed = streamedAtMs(
+          s.shape,
+          s.startTs,
+          s.endTs,
+          s.deposited,
+          Date.now(),
+        );
+        let next = streamed - s.withdrawn;
+        if (next < 0n) next = 0n;
+        setDisplay(next);
+      }
+
       rafRef.current = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
 
+    rafRef.current = requestAnimationFrame(tick);
     return () => {
       cancelled = true;
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [currentValue, targetValue, rate, lastUpdateMs]);
+    // Run the loop once per mount. The ref handles fresh props each tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <span

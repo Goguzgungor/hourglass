@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useMemo, useState } from 'react';
-import LiveCounter from './LiveCounter';
+import LiveCounter, { type StreamShape } from './LiveCounter';
 import StatusPill, { type StreamStatusTag } from './StatusPill';
 import { formatStroops } from '@/lib/format';
 
@@ -14,9 +14,8 @@ type Props = {
   cliff_ts: number;
   end_ts: number;
   status: StreamStatusTag;
-  /** stroops per second for LiveCounter interpolation */
-  rate: bigint;
-  lastUpdateMs: number;
+  /** Full schedule for cliff-aware LiveCounter projection. */
+  shape: StreamShape;
   tokenSymbol?: string;
 };
 
@@ -67,8 +66,7 @@ export default function CelestialDial({
   cliff_ts,
   end_ts,
   status,
-  rate,
-  lastUpdateMs,
+  shape,
   tokenSymbol = 'XLM',
 }: Props) {
   const id = useId().replace(/:/g, '');
@@ -391,10 +389,13 @@ export default function CelestialDial({
       >
         <p className="eyebrow text-cream-dim mb-3">Available to claim</p>
         <LiveCounter
-          currentValue={withdrawable}
-          targetValue={counterTarget > 0n ? counterTarget : withdrawable}
-          rate={status === 'STREAMING' ? rate : 0n}
-          lastUpdateMs={lastUpdateMs}
+          shape={shape}
+          startTs={start_ts}
+          endTs={end_ts}
+          deposited={deposited}
+          withdrawn={withdrawn}
+          status={status}
+          fallbackValue={withdrawable}
           format={(n) => formatStroops(n)}
           className={
             'block font-display italic tabular leading-none text-5xl ' +
