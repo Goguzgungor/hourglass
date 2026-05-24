@@ -16,8 +16,8 @@ import {
   truncAddress,
   unixToDatetimeLocal,
 } from '@/lib/format';
-import StreamRiver from '@/components/StreamRiver';
 import Toggle from '@/components/Toggle';
+import CreatePreview from '@/components/CreatePreview';
 
 /* ----------------------------------------------------------------- *
  * Defaults — recomputed once at mount so we don't churn the form.   *
@@ -136,15 +136,32 @@ export default function CreateStreamPage() {
 
     setSubmitting(true);
     try {
+      // Auto-bump start_ts if it's already (or nearly) in the past — gives the
+      // user signing time without the contract rejecting with StartInPast (#18).
+      // Preserves duration and cliff offset by shifting end_ts and cliff_ts by
+      // the same delta.
+      const nowSecs = Math.floor(Date.now() / 1000);
+      const minBuffer = 30; // seconds
+      let startTs = parsed.startTs;
+      let cliffTs = parsed.cliffTs;
+      let endTs = parsed.endTs;
+      if (startTs <= nowSecs + 5) {
+        const shift = nowSecs + minBuffer - startTs;
+        const hadNoCliff = cliffTs <= parsed.startTs;
+        startTs += shift;
+        endTs += shift;
+        cliffTs = hadNoCliff ? startTs : cliffTs + shift;
+      }
+
       const lockup = makeLockup(address);
       const tx = await lockup.create_linear({
         sender: address,
         recipient: recipient.trim(),
         token: tokenId,
         deposited: parsed.depositStroops,
-        start_ts: BigInt(parsed.startTs),
-        cliff_ts: BigInt(parsed.cliffTs),
-        end_ts: BigInt(parsed.endTs),
+        start_ts: BigInt(startTs),
+        cliff_ts: BigInt(cliffTs),
+        end_ts: BigInt(endTs),
         unlock_at_start: parsed.unlockStartStroops,
         unlock_at_cliff: parsed.unlockCliffStroops,
         is_cancelable: cancelable,
@@ -361,84 +378,20 @@ export default function CreateStreamPage() {
         {/* Right-side preview pane — md+ only */}
         <aside className="hidden md:block md:sticky md:top-32">
           <p className="eyebrow text-cream-dim mb-4">· Preview</p>
-          <PreviewPane
+          <CreatePreview
             parsed={parsed.ok ? parsed : null}
             recipient={recipient}
             symbol={symbol}
+            glyphColor={selectedToken?.glyphColor}
+            cancelable={cancelable}
+            transferable={transferable}
           />
-          <p className="mt-4 text-[11px] text-cream-dim/80 leading-relaxed">
-            A sketch of the river the recipient will see — bands update as you
-            edit the schedule.
+          <p className="mt-5 text-[11px] text-cream-dim/80 leading-relaxed">
+            Curve sketch + spec sheet update live as you edit. The recipient
+            will see exactly this schedule on-chain.
           </p>
         </aside>
       </div>
-    </div>
-  );
-}
-
-/* ----------------------------------------------------------------- *
- * Preview pane — a gray-toned StreamRiver mockup of the form spec  *
- * ----------------------------------------------------------------- */
-
-function PreviewPane({
-  parsed,
-  recipient,
-  symbol,
-}: {
-  parsed: {
-    depositStroops: bigint;
-    startTs: number;
-    cliffTs: number;
-    endTs: number;
-    duration: number;
-  } | null;
-  recipient: string;
-  symbol: string;
-}) {
-  // Use a 5-minute fallback window so the river still renders something
-  // even before the user has filled in valid values.
-  const fallbackStart = Math.floor(Date.now() / 1000);
-  const start = parsed?.startTs ?? fallbackStart;
-  const cliff = parsed?.cliffTs ?? start;
-  const end = parsed?.endTs ?? start + 300;
-  const deposit = parsed?.depositStroops ?? 10_000_000n;
-
-  return (
-    <div className="space-y-4">
-      <div className="opacity-90">
-        <StreamRiver
-          start_ts={start}
-          cliff_ts={cliff}
-          end_ts={end > start ? end : start + 60}
-          deposited={deposit}
-          withdrawn={0n}
-          withdrawable={0n}
-          height={180}
-          compact
-        />
-      </div>
-      <dl className="grid grid-cols-2 gap-y-2 text-[11px] font-mono">
-        <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
-          To
-        </dt>
-        <dd className="text-cream truncate">
-          {recipient ? truncAddress(recipient) : '—'}
-        </dd>
-        <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
-          Deposit
-        </dt>
-        <dd className="text-sand-bright">
-          {parsed ? `${formatStroops(parsed.depositStroops)} ${symbol}` : '—'}
-        </dd>
-        <dt className="text-cream-dim uppercase tracking-[0.18em] text-[9px]">
-          Duration
-        </dt>
-        <dd className="text-teal-bright">
-          {parsed && parsed.duration > 0
-            ? formatDuration(parsed.duration)
-            : '—'}
-        </dd>
-      </dl>
     </div>
   );
 }
