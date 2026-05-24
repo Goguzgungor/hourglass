@@ -39,7 +39,7 @@ export default function Home() {
 
               <div className="mt-12 flex flex-wrap items-center gap-4">
                 <a
-                  href="#"
+                  href="/create"
                   className="
                     group inline-flex items-center gap-3
                     bg-sand text-night
@@ -56,7 +56,7 @@ export default function Home() {
                   </span>
                 </a>
                 <a
-                  href="#"
+                  href="/stream/1"
                   className="
                     group inline-flex items-center gap-3
                     text-sand
