@@ -14,6 +14,17 @@ dist/
 *.wasm
 deployments/*.local.json
 
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Indexer data (SQLite)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
 # OS / editor
 .DS_Store
 .vscode/
