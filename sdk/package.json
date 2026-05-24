@@ -1,0 +1,25 @@
+{
+  "name": "hourglass",
+  "version": "0.1.0",
+  "description": "Hourglass TypeScript SDK",
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./lockup": "./dist/lockup.js",
+    "./comptroller": "./dist/comptroller.js"
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p .",
+    "regen": "bash scripts/regen-bindings.sh"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
