@@ -1,5 +1,5 @@
 use crate::{events, load_stream, nft, save_stream, DataKey, Lockup, LockupArgs, LockupClient};
-use hourglass_shared::{Error, OpKind};
+use hourglass_shared::Error;
 use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env};
 
 #[contractimpl]
@@ -26,8 +26,8 @@ impl Lockup {
         // Charge fee in XLM (skip if comptroller fee is 0).
         let comptroller_addr: Address =
             env.storage().instance().get(&DataKey::Comptroller).unwrap();
-        let comp_client = hourglass_comptroller::ComptrollerClient::new(&env, &comptroller_addr);
-        let xlm_fee = comp_client.fee_for(&OpKind::Withdraw);
+        let comp_client = crate::comptroller_client::Client::new(&env, &comptroller_addr);
+        let xlm_fee = comp_client.fee_for(&crate::comptroller_client::OpKind::Withdraw);
         if xlm_fee > 0 {
             let xlm = native_token(&env);
             let collector = comp_client.fee_collector();

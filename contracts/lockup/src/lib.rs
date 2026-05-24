@@ -5,6 +5,7 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, panic_with_error, Address, Env, Vec,
 };
 
+mod comptroller_client;
 mod create;
 mod events;
 mod lifecycle;
