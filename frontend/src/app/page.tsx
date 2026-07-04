@@ -87,12 +87,6 @@ export default function Home() {
                     className="w-full h-auto"
                   />
                 </div>
-                {/* Brass-plate caption */}
-                <div className="mt-6 xl:mt-8 text-center">
-                  <p className="text-[10px] xl:text-[11px] 2xl:text-[12px] uppercase tracking-[0.22em] text-cream-dim">
-                    fig. 1
-                  </p>
-                </div>
               </div>
             </div>
           </div>
