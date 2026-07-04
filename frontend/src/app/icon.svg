@@ -1,0 +1,15 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100" height="100" fill="#0a0e1a"/>
+  <g transform="translate(14,0) scale(0.714)">
+    <!-- Sand in upper bulb (60% remaining) -->
+    <polygon points="26,34 74,34 50,70" fill="#e8b76b" opacity="0.9"/>
+    <!-- Sand accumulated in lower bulb (40%) -->
+    <polygon points="26,106 74,106 90,130 10,130" fill="#e8b76b" opacity="0.9"/>
+    <!-- Hourglass outline -->
+    <polygon points="10,10 90,10 50,70" fill="none" stroke="#e8b76b" stroke-width="2"/>
+    <polygon points="50,70 10,130 90,130" fill="none" stroke="#e8b76b" stroke-width="2"/>
+    <!-- Top and bottom caps -->
+    <line x1="5" y1="10" x2="95" y2="10" stroke="#e8b76b" stroke-width="3.2" stroke-linecap="square"/>
+    <line x1="5" y1="130" x2="95" y2="130" stroke="#e8b76b" stroke-width="3.2" stroke-linecap="square"/>
+  </g>
+</svg>

@@ -35,8 +35,21 @@ export const metadata: Metadata = {
   title: 'Hourglass — Time, distilled into payment',
   description:
     'Stream SEP-41 tokens to a recipient on a precise schedule. Vest, pay, grant — by the second. Built on Stellar / Soroban.',
-  metadataBase: new URL('http://localhost:3000'),
-  icons: { icon: '/favicon.ico' },
+  metadataBase: new URL('https://hourglassprotocol.org'),
+  openGraph: {
+    title: 'Hourglass — Token streaming on Stellar',
+    description:
+      'Stream SEP-41 tokens to a recipient on a precise schedule. Vest, pay, grant — by the second.',
+    url: 'https://hourglassprotocol.org',
+    siteName: 'Hourglass',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Hourglass — Token streaming on Stellar',
+    description:
+      'Stream SEP-41 tokens on a precise vesting schedule. Built on Soroban.',
+  },
 };
 
 export default function RootLayout({
@@ -84,7 +97,7 @@ export default function RootLayout({
                   Specification
                 </a>
                 <a
-                  href="https://github.com"
+                  href="https://github.com/Goguzgungor/hourglass"
                   target="_blank"
                   rel="noreferrer"
                   className="hidden md:inline-block text-[11px] xl:text-[12px] 2xl:text-[13px] uppercase tracking-[0.18em] text-cream-dim hover:text-cream transition-colors"

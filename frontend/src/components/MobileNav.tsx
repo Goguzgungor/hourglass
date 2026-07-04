@@ -8,7 +8,7 @@ const LINKS: { href: string; label: string; external?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/#principles', label: 'Principles' },
   { href: '/#surface', label: 'Specification' },
-  { href: 'https://github.com', label: 'Source', external: true },
+  { href: 'https://github.com/Goguzgungor/hourglass', label: 'Source', external: true },
 ];
 
 /**

@@ -189,8 +189,8 @@ export default function CreateStreamPage() {
         {/* Eyebrow + headline */}
         <p className="eyebrow mb-6 sm:mb-8 xl:text-[0.78rem] 2xl:text-[0.85rem]">
           <span className="text-sand">·</span>{' '}
-          <span className="ml-1">Stage 0</span>{' '}
-          <span className="mx-2 text-stroke-2">/</span> Create a linear stream
+          <span className="ml-1">Create</span>{' '}
+          <span className="mx-2 text-stroke-2">/</span> Linear stream
         </p>
 
         <h1 className="headline text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[7rem] 2xl:text-[8.5rem] text-cream">
