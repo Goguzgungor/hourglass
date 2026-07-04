@@ -36,3 +36,7 @@ test-results/
 .DS_Store
 .vscode/
 .idea/
+
+# Local notes / AI context
+server-confs.md
+CLAUDE.md

@@ -1,0 +1,35 @@
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_DB: hourglass
+    depends_on:
+      - mongodb
+
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_DB: hourglass
+      INDEXER_POLL_MS: "5000"
+    depends_on:
+      - mongodb
+    command: npm run indexer
+
+volumes:
+  mongodb_data:

@@ -17,7 +17,7 @@
     "regen": "bash scripts/regen-bindings.sh"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.0.0"
+    "@stellar/stellar-sdk": "^15.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
