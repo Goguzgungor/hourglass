@@ -92,9 +92,6 @@ export default function Home() {
                   <p className="text-[10px] xl:text-[11px] 2xl:text-[12px] uppercase tracking-[0.22em] text-cream-dim">
                     fig. 1
                   </p>
-                  <p className="mt-2 font-mono text-[11px] xl:text-[12px] 2xl:text-[13px] text-cream-muted">
-                    62% remaining
-                  </p>
                 </div>
               </div>
             </div>
