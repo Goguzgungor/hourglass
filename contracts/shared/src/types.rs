@@ -82,6 +82,55 @@ pub struct Stream {
 /// storage entry size + tx resource fee predictable.
 pub const MAX_TRANCHES: u32 = 100;
 
+/// Maximum rows accepted by `create_batch`. A sanity cap that yields a clear
+/// error; the real bound is the per-transaction resource budget.
+pub const MAX_BATCH_ROWS: u32 = 100;
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinearParams {
+    pub deposited: i128,
+    pub start_ts: u64,
+    pub cliff_ts: u64,
+    pub end_ts: u64,
+    pub unlock_at_start: i128,
+    pub unlock_at_cliff: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranchedParams {
+    pub tranches: Vec<Tranche>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecurringParams {
+    pub amount_per_period: i128,
+    pub period_secs: u64,
+    pub count: u32,
+    pub first_ts: u64,
+}
+
+/// Shape-specific create parameters (no recipient / flags).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CreateSpec {
+    Linear(LinearParams),
+    Tranched(TranchedParams),
+    Recurring(RecurringParams),
+}
+
+/// One row of a `create_batch` call.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreateRow {
+    pub recipient: Address,
+    pub spec: CreateSpec,
+    pub is_cancelable: bool,
+    pub is_transferable: bool,
+}
+
 impl Stream {
     /// Pure status derivation from current timestamp. Does not read storage.
     pub fn status(&self, now: u64) -> StreamStatus {
