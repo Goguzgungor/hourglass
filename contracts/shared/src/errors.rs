@@ -26,6 +26,14 @@ pub enum Error {
     TooManyTranches = 17,
     /// `start_ts` (or first tranche ts) must be ≥ current ledger time.
     StartInPast = 18,
+    /// Batch must contain at least one row.
+    EmptyBatch = 19,
+    /// Batch row count exceeds `MAX_BATCH_ROWS`.
+    BatchTooLarge = 20,
+    /// `period_secs` must be > 0.
+    InvalidPeriod = 21,
+    /// `count` must be >= 1.
+    InvalidCount = 22,
 
     // ---- Lifecycle pre-conditions ----
     /// Stream id has no record.

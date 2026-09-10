@@ -39,11 +39,25 @@ pub struct TranchedShape {
     pub tranches: Vec<Tranche>,
 }
 
+/// N equal unlocks of `amount_per_period`, the first at `first_ts`, then every
+/// `period_secs`. `stream.start_ts == first_ts`,
+/// `stream.end_ts == first_ts + (count - 1) * period_secs`,
+/// `stream.deposited == amount_per_period * count`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecurringShape {
+    pub first_ts: u64,
+    pub period_secs: u64,
+    pub count: u32,
+    pub amount_per_period: i128,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamShape {
     Linear(LinearShape),
     Tranched(TranchedShape),
+    Recurring(RecurringShape),
 }
 
 #[contracttype]
@@ -153,5 +167,26 @@ mod tests {
         s.was_canceled = true;
         s.is_depleted = true;
         assert_eq!(s.status(50), StreamStatus::Depleted);
+    }
+
+    #[test]
+    fn status_for_recurring_uses_start_and_end() {
+        let env = Env::default();
+        let mut s = stream(&env);
+        s.start_ts = 1_000;
+        s.end_ts = 1_000 + 11 * 100;
+        s.deposited = 12_000;
+        s.shape = StreamShape::Recurring(RecurringShape {
+            first_ts: 1_000,
+            period_secs: 100,
+            count: 12,
+            amount_per_period: 1_000,
+        });
+        assert_eq!(s.status(999), StreamStatus::Pending);
+        assert_eq!(s.status(1_000), StreamStatus::Streaming);
+        assert_eq!(s.status(2_099), StreamStatus::Streaming);
+        assert_eq!(s.status(2_100), StreamStatus::Settled);
+        // withdrawable goes through the dispatcher
+        assert_eq!(s.withdrawable(1_250), 3_000);
     }
 }

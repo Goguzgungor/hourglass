@@ -264,6 +264,29 @@ mod tranched_tests {
     }
 }
 
+/// Cumulative streamed amount for a Recurring stream: `count` equal unlocks of
+/// `amount_per_period`, the first at `first_ts`, then every `period_secs`.
+///
+///   - before first_ts → 0
+///   - otherwise       → amount_per_period * min(count, (now - first_ts) / period_secs + 1)
+pub fn streamed_amount_recurring(
+    amount_per_period: i128,
+    first_ts: u64,
+    period_secs: u64,
+    count: u32,
+    now: u64,
+) -> Result<i128, Error> {
+    if now < first_ts {
+        return Ok(0);
+    }
+    if period_secs == 0 {
+        return Err(Error::InvalidPeriod);
+    }
+    let elapsed_periods = (now - first_ts) / period_secs;
+    let unlocked = elapsed_periods.saturating_add(1).min(count as u64);
+    mul(amount_per_period, unlocked as i128)
+}
+
 /// Dispatcher: pulls the right shape branch and computes streamed amount.
 pub fn streamed_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
     match &stream.shape {
@@ -277,6 +300,9 @@ pub fn streamed_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
             now,
         ),
         StreamShape::Tranched(t) => streamed_amount_tranched(&t.tranches, now),
+        StreamShape::Recurring(r) => {
+            streamed_amount_recurring(r.amount_per_period, r.first_ts, r.period_secs, r.count, now)
+        }
     }
 }
 
@@ -329,5 +355,89 @@ mod dispatcher_tests {
         let mut s = linear_stream(&env);
         s.withdrawn = 200_000;
         assert_eq!(withdrawable_amount(&s, 3_000).unwrap(), 300_000);
+    }
+}
+
+#[cfg(test)]
+mod recurring_tests {
+    use super::*;
+
+    const A: i128 = 1_000; // amount per period
+    const F: u64 = 1_000; // first unlock
+    const P: u64 = 100; // period
+    const N: u32 = 12; // count → last unlock at F + 11*P = 2_100
+
+    #[test]
+    fn zero_before_first_unlock() {
+        assert_eq!(streamed_amount_recurring(A, F, P, N, 999).unwrap(), 0);
+    }
+
+    #[test]
+    fn one_period_at_first_ts() {
+        assert_eq!(streamed_amount_recurring(A, F, P, N, 1_000).unwrap(), A);
+    }
+
+    #[test]
+    fn flat_until_next_boundary_then_steps() {
+        assert_eq!(streamed_amount_recurring(A, F, P, N, 1_099).unwrap(), A);
+        assert_eq!(streamed_amount_recurring(A, F, P, N, 1_100).unwrap(), 2 * A);
+        assert_eq!(streamed_amount_recurring(A, F, P, N, 1_250).unwrap(), 3 * A);
+    }
+
+    #[test]
+    fn full_at_last_unlock() {
+        assert_eq!(
+            streamed_amount_recurring(A, F, P, N, 2_100).unwrap(),
+            A * N as i128
+        );
+    }
+
+    #[test]
+    fn full_far_after_last_unlock() {
+        assert_eq!(
+            streamed_amount_recurring(A, F, P, N, 99_999).unwrap(),
+            A * N as i128
+        );
+    }
+
+    #[test]
+    fn single_period_is_full_at_first_ts() {
+        assert_eq!(streamed_amount_recurring(A, F, P, 1, F).unwrap(), A);
+        assert_eq!(
+            streamed_amount_recurring(A, F, P, 1, F + 10 * P).unwrap(),
+            A
+        );
+    }
+
+    #[test]
+    fn zero_period_is_error_once_started() {
+        assert!(matches!(
+            streamed_amount_recurring(A, F, 0, N, F),
+            Err(Error::InvalidPeriod)
+        ));
+    }
+
+    #[test]
+    fn overflow_on_huge_amount() {
+        assert!(matches!(
+            streamed_amount_recurring(i128::MAX, F, P, 2, F + P),
+            Err(Error::Overflow)
+        ));
+    }
+
+    #[test]
+    fn monotonic_non_decreasing() {
+        let mut prev = 0i128;
+        for t in (0..3_000u64).step_by(7) {
+            let cur = streamed_amount_recurring(A, F, P, N, t).unwrap();
+            assert!(
+                cur >= prev,
+                "decreased at t={}: prev={}, cur={}",
+                t,
+                prev,
+                cur
+            );
+            prev = cur;
+        }
     }
 }

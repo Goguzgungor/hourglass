@@ -6,5 +6,6 @@ pub mod types;
 
 pub use errors::Error;
 pub use types::{
-    LinearShape, OpKind, Stream, StreamShape, StreamStatus, Tranche, TranchedShape, MAX_TRANCHES,
+    LinearShape, OpKind, RecurringShape, Stream, StreamShape, StreamStatus, Tranche, TranchedShape,
+    MAX_TRANCHES,
 };
