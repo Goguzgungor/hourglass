@@ -1,5 +1,5 @@
 use super::common::setup;
-use hourglass_shared::Tranche;
+use hourglass_shared::{CreateRow, CreateSpec, LinearParams, RecurringParams, Tranche};
 use soroban_sdk::{testutils::Ledger as _, vec};
 
 /// For any time t1 <= t2, streamed_amount(t1) <= streamed_amount(t2).
@@ -114,4 +114,56 @@ fn streamed_amount_monotonic_recurring() {
         prev = cur;
     }
     assert_eq!(prev, 12_000);
+}
+
+/// Σ deposited == Σ withdrawn + Σ refunded + contract balance across a batch,
+/// after a cancel on one stream and a withdraw on another.
+#[test]
+fn asset_conservation_across_batch() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let rows = vec![
+        &f.env,
+        CreateRow {
+            recipient: f.recipient.clone(),
+            spec: CreateSpec::Linear(LinearParams {
+                deposited: 1_000_000,
+                start_ts: now + 100,
+                cliff_ts: now + 100,
+                end_ts: now + 1_100,
+                unlock_at_start: 0,
+                unlock_at_cliff: 0,
+            }),
+            is_cancelable: true,
+            is_transferable: true,
+        },
+        CreateRow {
+            recipient: f.recipient.clone(),
+            spec: CreateSpec::Recurring(RecurringParams {
+                amount_per_period: 1_000,
+                period_secs: 100,
+                count: 12,
+                first_ts: now + 100,
+            }),
+            is_cancelable: true,
+            is_transferable: true,
+        },
+    ];
+    let ids = f.lockup.create_batch(&f.sender, &f.token, &rows);
+
+    f.env.ledger().set_timestamp(now + 700);
+    f.lockup.cancel(&ids.get(0).unwrap());
+    f.lockup.withdraw_max(&ids.get(1).unwrap(), &f.recipient);
+
+    let mut deposited = 0i128;
+    let mut withdrawn = 0i128;
+    let mut refunded = 0i128;
+    for id in ids.iter() {
+        let s = f.lockup.get_stream(&id);
+        deposited += s.deposited;
+        withdrawn += s.withdrawn;
+        refunded += s.refunded;
+    }
+    let in_contract = f.token_client.balance(&f.lockup_addr);
+    assert_eq!(deposited, withdrawn + refunded + in_contract);
 }

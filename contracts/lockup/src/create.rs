@@ -1,7 +1,7 @@
 use crate::{events, next_id, nft, save_stream, Lockup, LockupArgs, LockupClient};
 use hourglass_shared::{
-    CreateSpec, Error, LinearParams, LinearShape, RecurringParams, RecurringShape, Stream,
-    StreamShape, Tranche, TranchedParams, TranchedShape, MAX_TRANCHES,
+    CreateRow, CreateSpec, Error, LinearParams, LinearShape, RecurringParams, RecurringShape,
+    Stream, StreamShape, Tranche, TranchedParams, TranchedShape, MAX_BATCH_ROWS, MAX_TRANCHES,
 };
 use soroban_sdk::{contractimpl, panic_with_error, token, Address, Env, Vec};
 
@@ -281,5 +281,56 @@ impl Lockup {
         );
         pull_deposit(&env, &token, &sender, stream.deposited);
         persist(&env, &stream)
+    }
+}
+
+#[contractimpl]
+impl Lockup {
+    /// Create 1..=MAX_BATCH_ROWS streams of mixed shapes for one sender and one
+    /// token in a single transaction. Every row is validated before any state
+    /// changes; the deposits are pulled with ONE token transfer; ids are
+    /// consecutive and returned in row order. Any failure reverts everything.
+    pub fn create_batch(
+        env: Env,
+        sender: Address,
+        token: Address,
+        rows: Vec<CreateRow>,
+    ) -> Vec<u32> {
+        sender.require_auth();
+        if rows.is_empty() {
+            panic_with_error!(&env, Error::EmptyBatch);
+        }
+        if rows.len() > MAX_BATCH_ROWS {
+            panic_with_error!(&env, Error::BatchTooLarge);
+        }
+
+        // Phase 1 — validate every row, build the records, sum the deposits.
+        let mut streams: Vec<Stream> = Vec::new(&env);
+        let mut total: i128 = 0;
+        for row in rows.iter() {
+            let s = build_stream(
+                &env,
+                &sender,
+                &token,
+                &row.recipient,
+                &row.spec,
+                row.is_cancelable,
+                row.is_transferable,
+            );
+            total = total
+                .checked_add(s.deposited)
+                .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
+            streams.push_back(s);
+        }
+
+        // Phase 2 — exactly one transfer for the whole batch.
+        pull_deposit(&env, &token, &sender, total);
+
+        // Phase 3 — persist in row order (ids are consecutive).
+        let mut ids: Vec<u32> = Vec::new(&env);
+        for s in streams.iter() {
+            ids.push_back(persist(&env, &s));
+        }
+        ids
     }
 }
