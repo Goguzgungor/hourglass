@@ -656,6 +656,7 @@ git commit -m "refactor(lockup): split create into build_stream + persist; add C
 
 **Files:**
 - Modify: `contracts/lockup/src/create.rs`
+- Modify: `contracts/lockup/src/tests/common.rs` (add `contract_error` helper)
 - Create: `contracts/lockup/src/tests/recurring.rs`
 - Modify: `contracts/lockup/src/tests/mod.rs`
 - Modify: `contracts/lockup/src/tests/invariants.rs`
@@ -685,12 +686,30 @@ mod withdraw;
 
 (`mod batch;` is declared now too; create an empty placeholder file `contracts/lockup/src/tests/batch.rs` containing only the comment `// Filled in Task 4.` so the crate compiles. Task 4 replaces it.)
 
+- [ ] **Step 1b: Add the `contract_error` test helper**
+
+Every lockup entry point returns a plain value and reports failures with `panic_with_error!`, so the generated `try_<fn>` client methods return `Err(Ok(soroban_sdk::Error))`, not `hourglass_shared::Error`. Add this helper to the end of `contracts/lockup/src/tests/common.rs` (and `ConversionError`, `InvokeError` to the `soroban_sdk` import) so tests can assert the exact contract error variant:
+
+```rust
+/// Extract the contract `Error` from a `try_*` client call that failed inside
+/// the contract (`panic_with_error!`). Panics if the call succeeded or failed
+/// for a non-contract reason.
+pub fn contract_error<T: core::fmt::Debug>(
+    res: Result<Result<T, ConversionError>, Result<soroban_sdk::Error, InvokeError>>,
+) -> hourglass_shared::Error {
+    match res {
+        Err(Ok(e)) => hourglass_shared::Error::try_from(e).expect("not a contract error"),
+        other => panic!("expected a contract error, got {:?}", other),
+    }
+}
+```
+
 - [ ] **Step 2: Write the failing recurring tests**
 
 Create `contracts/lockup/src/tests/recurring.rs`:
 
 ```rust
-use super::common::{setup, Fixture};
+use super::common::{contract_error, setup, Fixture};
 use hourglass_shared::{Error, RecurringShape, StreamShape, StreamStatus};
 use soroban_sdk::testutils::Ledger as _;
 
@@ -767,7 +786,7 @@ fn create_recurring_rejects_zero_amount() {
         &true,
         &true,
     );
-    assert!(matches!(res, Err(Ok(Error::ZeroDeposit))));
+    assert_eq!(contract_error(res), Error::ZeroDeposit);
 }
 
 #[test]
@@ -785,7 +804,7 @@ fn create_recurring_rejects_zero_period() {
         &true,
         &true,
     );
-    assert!(matches!(res, Err(Ok(Error::InvalidPeriod))));
+    assert_eq!(contract_error(res), Error::InvalidPeriod);
 }
 
 #[test]
@@ -803,7 +822,7 @@ fn create_recurring_rejects_zero_count() {
         &true,
         &true,
     );
-    assert!(matches!(res, Err(Ok(Error::InvalidCount))));
+    assert_eq!(contract_error(res), Error::InvalidCount);
 }
 
 #[test]
@@ -821,7 +840,7 @@ fn create_recurring_rejects_first_ts_in_past() {
         &true,
         &true,
     );
-    assert!(matches!(res, Err(Ok(Error::StartInPast))));
+    assert_eq!(contract_error(res), Error::StartInPast);
 }
 
 #[test]
@@ -839,7 +858,7 @@ fn create_recurring_rejects_amount_overflow() {
         &true,
         &true,
     );
-    assert!(matches!(res, Err(Ok(Error::Overflow))));
+    assert_eq!(contract_error(res), Error::Overflow);
 }
 
 #[test]
@@ -857,7 +876,7 @@ fn create_recurring_rejects_end_ts_overflow() {
         &true,
         &true,
     );
-    assert!(matches!(res, Err(Ok(Error::Overflow))));
+    assert_eq!(contract_error(res), Error::Overflow);
 }
 
 #[test]
@@ -961,10 +980,7 @@ fn recurring_renounce_blocks_cancel() {
     let id = create(&f, now + 100);
     f.lockup.renounce(&id);
     assert!(!f.lockup.get_stream(&id).is_cancelable);
-    assert!(matches!(
-        f.lockup.try_cancel(&id),
-        Err(Ok(Error::NotCancelable))
-    ));
+    assert_eq!(contract_error(f.lockup.try_cancel(&id)), Error::NotCancelable);
 }
 
 #[test]
@@ -976,10 +992,7 @@ fn recurring_burn_after_depletion() {
     f.env.ledger().set_timestamp(first + 100_000);
     f.lockup.withdraw_max(&id, &f.recipient);
     f.lockup.burn(&id);
-    assert!(matches!(
-        f.lockup.try_get_stream(&id),
-        Err(Ok(Error::StreamNotFound))
-    ));
+    assert_eq!(contract_error(f.lockup.try_get_stream(&id)), Error::StreamNotFound);
 }
 ```
 
@@ -1021,7 +1034,7 @@ Expected: compile error `no method named `create_recurring`` on `LockupClient`.
 
 - [ ] **Step 5: Implement `create_recurring`**
 
-Append to `contracts/lockup/src/create.rs`:
+In `validate_recurring` (create.rs) change `((p.count - 1) as u64)` to `u64::from(p.count).saturating_sub(1)` so the span no longer depends on the ordering of the `count == 0` guard. Then append to `contracts/lockup/src/create.rs`:
 
 ```rust
 #[contractimpl]
@@ -1085,7 +1098,7 @@ git commit -m "feat(lockup): add create_recurring entry point with lifecycle tes
 - Modify: `contracts/lockup/src/tests/invariants.rs`
 
 **Interfaces:**
-- Consumes: `build_stream`, `pull_deposit`, `persist`, `CreateRow`, `CreateSpec`, `MAX_BATCH_ROWS`, `Error::{EmptyBatch, BatchTooLarge}`.
+- Consumes: `build_stream`, `pull_deposit`, `persist`, `CreateRow`, `CreateSpec`, `MAX_BATCH_ROWS`, `Error::{EmptyBatch, BatchTooLarge}`; test helper `contract_error` from `tests/common.rs` (Task 3).
 - Produces: contract entry `create_batch(sender: Address, token: Address, rows: Vec<CreateRow>) -> Vec<u32>` (client methods `create_batch` / `try_create_batch`).
 
 - [ ] **Step 1: Write the failing batch tests**
@@ -1093,7 +1106,7 @@ git commit -m "feat(lockup): add create_recurring entry point with lifecycle tes
 Replace `contracts/lockup/src/tests/batch.rs` with:
 
 ```rust
-use super::common::{setup, Fixture};
+use super::common::{contract_error, setup, Fixture};
 use hourglass_shared::{
     CreateRow, CreateSpec, Error, LinearParams, RecurringParams, StreamShape, Tranche,
     TranchedParams, MAX_BATCH_ROWS,
@@ -1280,16 +1293,13 @@ fn batch_is_atomic_when_a_row_is_invalid() {
     ];
 
     let res = f.lockup.try_create_batch(&f.sender, &f.token, &rows);
-    assert!(matches!(res, Err(Ok(Error::StartInPast))));
+    assert_eq!(contract_error(res), Error::StartInPast);
 
     // Nothing happened.
     assert_eq!(f.token_client.balance(&f.sender), SENDER_START_BALANCE);
     assert_eq!(f.token_client.balance(&f.lockup_addr), 0);
     assert_eq!(f.lockup.total_supply(), 0);
-    assert!(matches!(
-        f.lockup.try_get_stream(&1),
-        Err(Ok(Error::StreamNotFound))
-    ));
+    assert_eq!(contract_error(f.lockup.try_get_stream(&1)), Error::StreamNotFound);
 
     // The id counter was not consumed.
     let ok_rows = vec![&f.env, linear_row(&f.recipient, now)];
@@ -1319,10 +1329,7 @@ fn batch_is_atomic_when_sender_balance_is_insufficient() {
     assert_eq!(f.token_client.balance(&f.sender), SENDER_START_BALANCE);
     assert_eq!(f.token_client.balance(&f.lockup_addr), 0);
     assert_eq!(f.lockup.total_supply(), 0);
-    assert!(matches!(
-        f.lockup.try_get_stream(&1),
-        Err(Ok(Error::StreamNotFound))
-    ));
+    assert_eq!(contract_error(f.lockup.try_get_stream(&1)), Error::StreamNotFound);
 }
 
 #[test]
@@ -1330,7 +1337,7 @@ fn batch_rejects_empty() {
     let f = setup();
     let rows: Vec<CreateRow> = Vec::new(&f.env);
     let res = f.lockup.try_create_batch(&f.sender, &f.token, &rows);
-    assert!(matches!(res, Err(Ok(Error::EmptyBatch))));
+    assert_eq!(contract_error(res), Error::EmptyBatch);
 }
 
 #[test]
@@ -1342,7 +1349,7 @@ fn batch_rejects_more_than_max_rows() {
         rows.push_back(linear_row(&f.recipient, now));
     }
     let res = f.lockup.try_create_batch(&f.sender, &f.token, &rows);
-    assert!(matches!(res, Err(Ok(Error::BatchTooLarge))));
+    assert_eq!(contract_error(res), Error::BatchTooLarge);
 }
 
 #[test]
@@ -1360,7 +1367,7 @@ fn batch_rejects_deposit_sum_overflow() {
     });
     let rows = vec![&f.env, huge, linear_row(&f.recipient, now)];
     let res = f.lockup.try_create_batch(&f.sender, &f.token, &rows);
-    assert!(matches!(res, Err(Ok(Error::Overflow))));
+    assert_eq!(contract_error(res), Error::Overflow);
     assert_eq!(f.token_client.balance(&f.sender), SENDER_START_BALANCE);
 }
 
