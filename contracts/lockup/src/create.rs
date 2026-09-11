@@ -136,7 +136,8 @@ fn validate_recurring(env: &Env, p: &RecurringParams, now: u64) -> (u64, u64, i1
         .amount_per_period
         .checked_mul(p.count as i128)
         .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
-    let span = ((p.count - 1) as u64)
+    let span = u64::from(p.count)
+        .saturating_sub(1)
         .checked_mul(p.period_secs)
         .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
     let end_ts = p
@@ -232,6 +233,43 @@ impl Lockup {
     ) -> u32 {
         sender.require_auth();
         let spec = CreateSpec::Tranched(TranchedParams { tranches });
+        let stream = build_stream(
+            &env,
+            &sender,
+            &token,
+            &recipient,
+            &spec,
+            is_cancelable,
+            is_transferable,
+        );
+        pull_deposit(&env, &token, &sender, stream.deposited);
+        persist(&env, &stream)
+    }
+}
+
+#[contractimpl]
+impl Lockup {
+    /// Recurring stream: `count` unlocks of `amount_per_period`, the first at
+    /// `first_ts`, then every `period_secs`. Deposit = amount_per_period * count.
+    pub fn create_recurring(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        amount_per_period: i128,
+        period_secs: u64,
+        count: u32,
+        first_ts: u64,
+        is_cancelable: bool,
+        is_transferable: bool,
+    ) -> u32 {
+        sender.require_auth();
+        let spec = CreateSpec::Recurring(RecurringParams {
+            amount_per_period,
+            period_secs,
+            count,
+            first_ts,
+        });
         let stream = build_stream(
             &env,
             &sender,

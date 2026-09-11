@@ -90,3 +90,28 @@ fn asset_conservation_after_cancel_and_withdraw() {
     let in_contract = f.token_client.balance(&f.lockup_addr);
     assert_eq!(s.deposited, s.withdrawn + s.refunded + in_contract);
 }
+
+#[test]
+fn streamed_amount_monotonic_recurring() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_recurring(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000i128,
+        &100u64,
+        &12u32,
+        &(now + 100),
+        &true,
+        &true,
+    );
+    let mut prev = 0i128;
+    for t in (0..2_500u64).step_by(7) {
+        f.env.ledger().set_timestamp(now + t);
+        let cur = f.lockup.streamed_amount(&id);
+        assert!(cur >= prev, "decrease at t={}", t);
+        prev = cur;
+    }
+    assert_eq!(prev, 12_000);
+}
