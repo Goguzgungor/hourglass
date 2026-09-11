@@ -193,6 +193,16 @@ interface ShapeTranchedChain {
   }];
 }
 
+interface ShapeRecurringChain {
+  tag: 'Recurring';
+  values: readonly [{
+    first_ts: bigint | number;
+    period_secs: bigint | number;
+    count: number;
+    amount_per_period: bigint;
+  }];
+}
+
 interface StreamChain {
   sender: string;
   recipient: string;
@@ -206,7 +216,7 @@ interface StreamChain {
   is_transferable: boolean;
   was_canceled: boolean;
   is_depleted: boolean;
-  shape: ShapeLinearChain | ShapeTranchedChain;
+  shape: ShapeLinearChain | ShapeTranchedChain | ShapeRecurringChain;
 }
 
 async function fetchStreamFromChain(
@@ -217,21 +227,31 @@ async function fetchStreamFromChain(
     const s = tx.result as StreamChain | undefined;
     if (!s || !s.sender) return null;
 
-    const shapeFields: Partial<StreamDoc> =
-      s.shape.tag === 'Linear'
-        ? {
-            model: 'Linear',
-            cliff_ts: Number(s.shape.values[0].cliff_ts),
-            unlock_at_start: String(s.shape.values[0].unlock_at_start),
-            unlock_at_cliff: String(s.shape.values[0].unlock_at_cliff),
-          }
-        : {
-            model: 'Tranched',
-            tranches: s.shape.values[0].tranches.map((t) => ({
-              amount: String(t.amount),
-              ts: Number(t.ts),
-            })),
-          };
+    let shapeFields: Partial<StreamDoc>;
+    if (s.shape.tag === 'Linear') {
+      shapeFields = {
+        model: 'Linear',
+        cliff_ts: Number(s.shape.values[0].cliff_ts),
+        unlock_at_start: String(s.shape.values[0].unlock_at_start),
+        unlock_at_cliff: String(s.shape.values[0].unlock_at_cliff),
+      };
+    } else if (s.shape.tag === 'Tranched') {
+      shapeFields = {
+        model: 'Tranched',
+        tranches: s.shape.values[0].tranches.map((t) => ({
+          amount: String(t.amount),
+          ts: Number(t.ts),
+        })),
+      };
+    } else {
+      shapeFields = {
+        model: 'Recurring',
+        first_ts: Number(s.shape.values[0].first_ts),
+        period_secs: Number(s.shape.values[0].period_secs),
+        count: Number(s.shape.values[0].count),
+        amount_per_period: String(s.shape.values[0].amount_per_period),
+      };
+    }
 
     return {
       sender: String(s.sender),

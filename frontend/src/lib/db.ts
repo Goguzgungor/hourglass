@@ -69,7 +69,7 @@ export interface StreamDoc {
   sender: string;
   recipient: string;
   token: string;
-  model: 'Linear' | 'Tranched';
+  model: 'Linear' | 'Tranched' | 'Recurring';
   start_ts: number;
   end_ts: number;
   // Linear-only:
@@ -78,6 +78,11 @@ export interface StreamDoc {
   unlock_at_cliff?: string;
   // Tranched-only:
   tranches?: TrancheTerms[];
+  // Recurring-only:
+  first_ts?: number;
+  period_secs?: number;
+  count?: number;
+  amount_per_period?: string;
   // Common balance / flags (i128 amounts stored as decimal strings):
   deposited: string;
   withdrawn: string;
