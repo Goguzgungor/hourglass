@@ -1212,6 +1212,9 @@ fn batch_creates_mixed_rows_with_one_transfer() {
     ];
 
     let ids = f.lockup.create_batch(&f.sender, &f.token, &rows);
+    // Must run before any other invocation: events().all() only holds the
+    // last call's events.
+    assert_eq!(count_created_events(&f), 3);
     assert_eq!(ids, vec![&f.env, 1u32, 2u32, 3u32]);
 
     let total = LINEAR_DEPOSIT + RECURRING_TOTAL + TRANCHED_TOTAL;
@@ -1240,8 +1243,6 @@ fn batch_creates_mixed_rows_with_one_transfer() {
     assert_eq!(f.lockup.owner_of(&2), r2);
     assert_eq!(f.lockup.owner_of(&3), r3);
     assert_eq!(f.lockup.total_supply(), 3);
-
-    assert_eq!(count_created_events(&f), 3);
 }
 
 #[test]
