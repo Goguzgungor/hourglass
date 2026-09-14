@@ -172,6 +172,36 @@ fn create_recurring_rejects_end_ts_overflow() {
 }
 
 #[test]
+fn create_recurring_rejects_first_ts_plus_span_overflow() {
+    // (count - 1) * period_secs fits in u64 (1 * (u64::MAX - 1_000)),
+    // but first_ts + span does not — exercises the checked_add step.
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let res = f.lockup.try_create_recurring(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &AMOUNT,
+        &(u64::MAX - 1_000),
+        &2u32,
+        &(now + 100),
+        &true,
+        &true,
+    );
+    assert_eq!(contract_error(res), Error::Overflow);
+}
+
+#[test]
+fn create_recurring_accepts_first_ts_equal_to_now() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = create(&f, now);
+    let s = f.lockup.get_stream(&id);
+    assert_eq!(s.start_ts, now);
+    assert_eq!(f.lockup.streamed_amount(&id), AMOUNT);
+}
+
+#[test]
 fn recurring_streams_in_steps() {
     let f = setup();
     let now = f.env.ledger().timestamp();

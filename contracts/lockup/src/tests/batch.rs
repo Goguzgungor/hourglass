@@ -101,7 +101,7 @@ fn count_token_transfer_events(f: &Fixture<'_>) -> usize {
         .filter(|e| {
             let ContractEventBody::V0(v0) = &e.body;
             matches!(
-                v0.topics.get(0),
+                v0.topics.first(),
                 Some(ScVal::Symbol(s)) if s.to_utf8_string_lossy() == "transfer"
             )
         })
@@ -140,18 +140,24 @@ fn batch_creates_mixed_rows_with_one_transfer() {
     assert_eq!(s1.deposited, LINEAR_DEPOSIT);
     assert!(matches!(s1.shape, StreamShape::Linear(_)));
     assert!(s1.is_cancelable && s1.is_transferable);
+    assert_eq!(s1.start_ts, now + 100);
+    assert_eq!(s1.end_ts, now + 1_100);
 
     let s2 = f.lockup.get_stream(&2);
     assert_eq!(s2.recipient, r2);
     assert_eq!(s2.deposited, RECURRING_TOTAL);
     assert!(matches!(s2.shape, StreamShape::Recurring(_)));
     assert!(s2.is_cancelable && !s2.is_transferable);
+    assert_eq!(s2.start_ts, now + 100);
+    assert_eq!(s2.end_ts, now + 100 + 11 * 100);
 
     let s3 = f.lockup.get_stream(&3);
     assert_eq!(s3.recipient, r3);
     assert_eq!(s3.deposited, TRANCHED_TOTAL);
     assert!(matches!(s3.shape, StreamShape::Tranched(_)));
     assert!(!s3.is_cancelable && s3.is_transferable);
+    assert_eq!(s3.start_ts, now + 100);
+    assert_eq!(s3.end_ts, now + 300);
 
     assert_eq!(f.lockup.owner_of(&1), r1);
     assert_eq!(f.lockup.owner_of(&2), r2);
