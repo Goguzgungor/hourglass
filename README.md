@@ -10,7 +10,7 @@ Lock SEP-41 tokens into a vesting schedule (linear with cliff, stepped tranches,
 
 Lockup **v0.2** on testnet — Linear, Tranched and **Recurring** streams, atomic **batch creation**, NFT receipts. Frontend + Mongo indexer deployed; batch/recurring create UI, search/filtering and treasury prep are the next phase-2 sub-projects (see `docs/superpowers/specs/2026-09-10-batch-recurring-streams-design.md`).
 
-- `cargo test` — all workspace tests pass in-process (no network); 106 tests (comptroller 11, lockup 56, shared 39).
+- `cargo test` — all workspace tests pass in-process (no network); 108 tests (comptroller 11, lockup 58, shared 39).
 - Wasm builds clean (`scripts/build.sh`): comptroller ~11 KB, lockup ~97 KB optimized.
 - Testnet: contract ids in `deployments/testnet.json`; `scripts/smoke-testnet.sh` exercises linear, recurring and batch creation end-to-end.
 

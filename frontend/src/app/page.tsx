@@ -172,7 +172,7 @@ export default function Home() {
               <SpecRow
                 k="Stream shapes"
                 v="Linear · Tranched · Recurring"
-                kicker="2"
+                kicker="3"
               />
               <SpecRow
                 k="Receipt"
