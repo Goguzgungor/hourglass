@@ -84,6 +84,46 @@ describe('fetchAndIngest', () => {
     await expect(fetchAndIngest(server, store, opts, async () => {})).rejects.toThrow('cursor parameter is required');
     expect(store.cursor).toEqual({ cursor: 'stale', ledger: 10 });
   });
+  it('resets on the real public-RPC retention message', async () => {
+    // Verbatim from soroban-rpc: a stale startLedger AND a stale cursor both
+    // come back as this. Nothing in it says "oldest".
+    const store = new MemoryIndexerStore();
+    store.cursor = { cursor: 'stale', ledger: 10 };
+    const server = {
+      async getEvents() { throw new Error('startLedger must be within the ledger range: 4556625 - 4677584'); },
+      async getLatestLedger() { return { sequence: 9_000 }; },
+    };
+    const r = await fetchAndIngest(server, store, opts, async () => {});
+    expect(r).toEqual({ pages: 0, events: 0, reset: true });
+    expect(store.cursor).toEqual({ cursor: null, ledger: 8_900 });
+  });
+  it('resets on a thrown JSON-RPC -32600 object (the SDK throws data.error, not an Error)', async () => {
+    const store = new MemoryIndexerStore();
+    store.cursor = { cursor: 'stale', ledger: 10 };
+    const server = {
+      async getEvents() { throw { code: -32600, message: 'startLedger must be within the ledger range: 1 - 2' }; },
+      async getLatestLedger() { return { sequence: 9_000 }; },
+    };
+    const r = await fetchAndIngest(server, store, opts, async () => {});
+    expect(r).toEqual({ pages: 0, events: 0, reset: true });
+    expect(store.cursor).toEqual({ cursor: null, ledger: 8_900 });
+  });
+  it('keeps the previous cursor when a page comes back without one', async () => {
+    const store = new MemoryIndexerStore();
+    store.cursor = { cursor: 'c-prev', ledger: 10 };
+    const warns: string[] = [];
+    const server = {
+      async getEvents() {
+        return { events: [], cursor: '', latestLedger: 9_000 } as unknown as rpc.Api.GetEventsResponse;
+      },
+      async getLatestLedger() { return { sequence: 9_000 }; },
+    };
+    const r = await fetchAndIngest(server, store, opts, async () => {}, { warn: (m) => warns.push(m) });
+    expect(r.reset).toBe(false);
+    // Never `startLedger: latestLedger` — that would skip everything in between.
+    expect(store.cursor!.cursor).toBe('c-prev');
+    expect(warns).toHaveLength(1);
+  });
   it('resets on a retention error that mentions "cursor" alongside a qualifier', async () => {
     const store = new MemoryIndexerStore();
     store.cursor = { cursor: 'stale', ledger: 10 };
@@ -127,6 +167,14 @@ describe('handleEvent', () => {
     await handleEvent(parsed({ action: 'withdrawn', topics: ['stream', 'withdrawn', 1, 'GRECIP'], data: [250n, 'GRECIP'], tx_hash: 'h2' }), { chain, store, contractId: 'CLOCKUP', now });
     expect(store.streams.get(1)!.withdrawn).toBe('250');
     expect(store.actions[0]).toMatchObject({ action: 'withdrawn', amount: '250', actor: 'GRECIP', to: 'GRECIP', participants: ['GSENDER', 'GRECIP'] });
+  });
+  it('gives a stream first seen through a non-created event a sortable created_at', async () => {
+    // After a retention reset the `created` event is long gone; the doc must
+    // still get a `created_at` or it disappears from the default sort.
+    const chain = new FakeChain(new Map([[1, chainStream({ withdrawn: 250n })]]));
+    const store = new MemoryIndexerStore();
+    await handleEvent(parsed({ action: 'withdrawn', topics: ['stream', 'withdrawn', 1, 'GRECIP'], data: [250n, 'GRECIP'], tx_hash: 'h2' }), { chain, store, contractId: 'CLOCKUP', now });
+    expect(store.streams.get(1)!.created_at).toBe(1_000); // chainStream().start_ts
   });
   it('transferred: records new_owner and includes it in participants', async () => {
     const chain = new FakeChain(new Map([[1, chainStream({ recipient: 'GNEW' })]]));

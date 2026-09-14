@@ -42,9 +42,21 @@ export function participantsFor(
 // describes a retention failure.
 const CURSOR_RETENTION_QUALIFIERS = ['invalid', 'before', 'retention', 'expired', 'unknown'];
 
+/**
+ * Did the RPC refuse our position because it has fallen out of retention?
+ *
+ * The public Soroban RPC answers a stale `startLedger` AND a stale `cursor`
+ * with the same JSON-RPC error: code -32600, message
+ * `startLedger must be within the ledger range: 4556625 - 4677584`. The SDK
+ * throws `response.data.error` — a plain object, not an `Error` — so both the
+ * code and the message are read defensively.
+ */
 function isRetentionError(err: unknown): boolean {
-  const msg = ((err as Error)?.message ?? String(err)).toLowerCase();
+  const msg = ((err as { message?: string })?.message ?? String(err)).toLowerCase();
+  if ((err as { code?: number })?.code === -32600
+    && (msg.includes('startledger') || msg.includes('ledger range'))) return true;
   if (msg.includes('oldest')) return true;
+  if (msg.includes('ledger range')) return true;
   if (msg.includes('cursor')) return CURSOR_RETENTION_QUALIFIERS.some((k) => msg.includes(k));
   return false;
 }
@@ -61,6 +73,7 @@ export async function fetchAndIngest(
   store: IndexerStore,
   opts: IngestOptions,
   handleRaw: (e: rpc.Api.EventResponse) => Promise<void>,
+  log: { warn(msg: string): void } = console,
 ): Promise<IngestResult> {
   let state: CursorState | null = await store.loadCursorState();
   if (!state) {
@@ -93,8 +106,17 @@ export async function fetchAndIngest(
       await handleRaw(e);
       events++;
     }
-    state = { cursor: res.cursor, ledger: res.latestLedger };
-    await store.saveCursorState(state);
+    if (res.cursor) {
+      state = { cursor: res.cursor, ledger: res.latestLedger };
+      await store.saveCursorState(state);
+    } else {
+      // No cursor came back. Keeping the one we have re-fetches this page next
+      // tick (every write is idempotent); jumping to `startLedger:
+      // latestLedger` instead would silently skip every event in between.
+      log.warn('[indexer] RPC returned no cursor for a page — keeping the previous position');
+      await store.saveCursorState(state);
+      break;
+    }
     if (res.events.length < opts.pageLimit) break;
   }
   return { pages, events, reset: false };
@@ -127,7 +149,11 @@ export async function handleEvent(
     await store.upsertStream(
       p.streamId,
       { ...fields, ...extra, contract: contractId, updated_at: now, source: 'event' },
-      onInsert,
+      // Every first materialization gets a sortable `created_at`, even when the
+      // stream is first seen through a non-`created` event (retention reset, a
+      // late start). `created` passes the real ledger time in `$set`, which
+      // wins over this `$setOnInsert` guess.
+      { created_at: fields.start_ts, ...onInsert },
     );
   };
 

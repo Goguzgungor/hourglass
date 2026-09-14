@@ -17,14 +17,17 @@ import { rpc as StellarRpc } from '@stellar/stellar-sdk';
 import { ensureIndexes } from '../src/lib/db';
 import { DEPLOYMENT } from '../src/lib/deployments';
 import { makeChainReader } from '../src/lib/indexer/chain';
+import { envInt } from '../src/lib/indexer/config';
 import { parseEvent } from '../src/lib/indexer/events';
 import { fetchAndIngest, handleEvent } from '../src/lib/indexer/ingest';
 import { reconcile } from '../src/lib/indexer/reconcile';
 import { MongoIndexerStore } from '../src/lib/indexer/store';
 
-const POLL_MS = Number(process.env.INDEXER_POLL_MS ?? 3000);
-const RECONCILE_MS = Number(process.env.INDEXER_RECONCILE_MS ?? 600_000);
-const MAX_PAGES = Number(process.env.INDEXER_MAX_PAGES ?? 20);
+// Validated: a typo'd env var falls back to the default instead of turning the
+// loop into a NaN busy-spin (`setTimeout(NaN)` fires immediately).
+const POLL_MS = envInt('INDEXER_POLL_MS', 3_000);
+const RECONCILE_MS = envInt('INDEXER_RECONCILE_MS', 600_000);
+const MAX_PAGES = envInt('INDEXER_MAX_PAGES', 20);
 const PAGE_LIMIT = 100;
 const STARTUP_BUFFER_LEDGERS = 100;
 const RECONCILE_CONCURRENCY = 5;
@@ -38,6 +41,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   console.log(`[indexer] starting against ${DEPLOYMENT.rpcUrl}, contract ${CONTRACT}`);
+  console.log(
+    `[indexer] config: pollMs=${POLL_MS} reconcileMs=${RECONCILE_MS} maxPages=${MAX_PAGES}`
+    + ` pageLimit=${PAGE_LIMIT} startupBufferLedgers=${STARTUP_BUFFER_LEDGERS}`
+    + ` reconcileConcurrency=${RECONCILE_CONCURRENCY}`,
+  );
 
   const server = new StellarRpc.Server(DEPLOYMENT.rpcUrl, { allowHttp: DEPLOYMENT.rpcUrl.startsWith('http://') });
   const chain = makeChainReader({
@@ -51,6 +59,8 @@ async function main(): Promise<void> {
   await ensureIndexes();
   const migrated = await store.backfillParticipants();
   if (migrated > 0) console.log(`[indexer] backfilled participants on ${migrated} action(s)`);
+  const dated = await store.backfillCreatedAt();
+  if (dated > 0) console.log(`[indexer] backfilled created_at on ${dated} stream(s)`);
 
   const runReconcile = async (why: string) => {
     try {
@@ -60,9 +70,9 @@ async function main(): Promise<void> {
       console.error('[indexer] reconcile failed:', err);
     }
   };
-  await runReconcile('startup');
-  let lastReconcile = Date.now();
 
+  // Registered before the startup reconcile: that pass can take a while against
+  // a large contract, and a Ctrl-C during it must still be honoured.
   let shuttingDown = false;
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, () => {
@@ -72,7 +82,14 @@ async function main(): Promise<void> {
     });
   }
 
+  await runReconcile('startup');
+  let lastReconcile = Date.now();
+
   while (!shuttingDown) {
+    // Reconcile is the self-healing path, so it must NOT be a casualty of a
+    // failing ingest: the tick's try/catch covers `fetchAndIngest` only, and
+    // the scheduling decision below runs either way.
+    let reconcileDue = false;
     try {
       const r = await fetchAndIngest(
         server,
@@ -91,14 +108,15 @@ async function main(): Promise<void> {
       if (r.events > 0) console.log(`[indexer] ingested ${r.events} event(s) over ${r.pages} page(s)`);
       if (r.reset) {
         console.warn('[indexer] cursor predates RPC retention — reset; reconciling');
-        await runReconcile('retention-reset');
-        lastReconcile = Date.now();
-      } else if (Date.now() - lastReconcile >= RECONCILE_MS) {
-        await runReconcile('periodic');
-        lastReconcile = Date.now();
+        reconcileDue = true;
       }
     } catch (err) {
       console.error('[indexer] tick failed:', err);
+    }
+
+    if (reconcileDue || Date.now() - lastReconcile >= RECONCILE_MS) {
+      await runReconcile(reconcileDue ? 'retention-reset' : 'periodic');
+      lastReconcile = Date.now();
     }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }

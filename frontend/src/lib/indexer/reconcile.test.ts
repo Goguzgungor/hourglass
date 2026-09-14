@@ -75,15 +75,39 @@ describe('reconcile', () => {
     expect(r.upserted).toBe(2); // id 1 (live, missing in mongo) + id 5 (verified live)
     expect(r.live).toBe(1);
   });
-  it('keeps provenance when refreshing an existing doc', async () => {
-    const chain = new FakeChain(new Map([[1, chainStream()]]));
+  it('keeps provenance — including source: event — when refreshing an existing doc', async () => {
+    const chain = new FakeChain(new Map([[1, chainStream({ withdrawn: 3n })]]));
     const store = new MemoryIndexerStore();
-    store.streams.set(1, { _id: 1, created_tx: 'h1', created_ledger: 9, created_at: 900, was_canceled: false, is_depleted: false } as never);
+    store.streams.set(1, { _id: 1, created_tx: 'h1', created_ledger: 9, created_at: 900, source: 'event', withdrawn: '0', was_canceled: false, is_depleted: false } as never);
     await reconcile(chain, store, opts);
-    // `source`/`updated_at` prove the doc really was refreshed, so the surviving
-    // provenance is not just an untouched doc.
+    // `withdrawn`/`updated_at` prove the doc really was refreshed, so the
+    // surviving provenance is not just an untouched doc. `source` records who
+    // first materialized it, so a reconcile refresh must not rewrite it.
     expect(store.streams.get(1)).toMatchObject({
-      created_tx: 'h1', created_ledger: 9, created_at: 900, source: 'reconcile', updated_at: 5_000,
+      created_tx: 'h1', created_ledger: 9, created_at: 900, source: 'event', withdrawn: '3', updated_at: 5_000,
     });
+  });
+  it('marks only docs it inserted itself with source: reconcile', async () => {
+    const chain = new FakeChain(new Map([[7, chainStream()]]));
+    const store = new MemoryIndexerStore();
+    await reconcile(chain, store, opts);
+    expect(store.streams.get(7)).toMatchObject({ source: 'reconcile', created_at: 1_000 });
+  });
+  it('skips an enumeration index whose get_token_id throws instead of failing the pass', async () => {
+    class FlakyChain extends FakeChain {
+      async getTokenId(index: number) {
+        this.calls.getTokenId++;
+        if (index === 1) throw new Error('rpc blew up on index 1');
+        return [...this.streams.keys()][index];
+      }
+    }
+    const chain = new FlakyChain(new Map([[1, chainStream()], [2, chainStream()], [3, chainStream()]]));
+    const store = new MemoryIndexerStore();
+    const warns: string[] = [];
+    const r = await reconcile(chain, store, { ...opts, concurrency: 1 }, { warn: (m) => warns.push(m) });
+    // Index 1 (stream id 2) is skipped; the other two are still reconciled.
+    expect(r.live).toBe(2);
+    expect([...store.streams.keys()].sort()).toEqual([1, 3]);
+    expect(warns).toHaveLength(1);
   });
 });

@@ -122,6 +122,22 @@ export class MongoIndexerStore implements IndexerStore {
   }
 
   /**
+   * One-time migration: fill `created_at` on streams written before every
+   * first materialization set it (a doc first seen through a non-`created`
+   * event had no sort key, so it was invisible to the default `created_at`
+   * ordering). `start_ts` is the same fallback a fresh insert uses. Returns
+   * the number of streams updated.
+   */
+  async backfillCreatedAt(): Promise<number> {
+    const streams = await streamsCollection();
+    const res = await streams.updateMany(
+      { created_at: { $exists: false } },
+      [{ $set: { created_at: '$start_ts' } }],
+    );
+    return res.modifiedCount;
+  }
+
+  /**
    * One-time migration: fill `participants` on actions written before the
    * field existed. The recipient is reconstructed at the action's own
    * (ts, log_index) from the stream's transfer history — using the stream
