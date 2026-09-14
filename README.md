@@ -4,7 +4,7 @@ Token streaming on Stellar / Soroban. Clean-room reimplementation inspired by Sa
 
 ## What it does
 
-Lock SEP-41 tokens into a vesting schedule (linear with cliff, or stepped tranches), represented as a transferable NFT receipt. Senders can cancel mid-stream (until renounced); recipients can withdraw the accrued portion any time.
+Lock SEP-41 tokens into a vesting schedule (linear with cliff, stepped tranches, or recurring periodic equal unlocks — created singly or in an atomic batch), represented as a transferable NFT receipt. Senders can cancel mid-stream (until renounced); recipients can withdraw the accrued portion any time.
 
 ## Status
 

@@ -71,7 +71,7 @@ Hourglass is a token-streaming protocol deployed on Stellar / Soroban. It allows
 The core immutable contract. Holds all stream state in Soroban persistent storage (one entry per stream ID). Embeds a NonFungibleToken Enumerable mixin for NFT receipts.
 
 **Storage layout:**
-- Instance storage: `admin`, `comptroller`, `next_stream_id`
+- Instance storage: `admin`, `comptroller`, `native_token` (the XLM SAC used for fees), `next_stream_id`
 - Persistent storage: `Stream { id }` — one entry per active stream
 
 **Entry points:**
@@ -290,18 +290,18 @@ pub struct CreateRow {
 - Every row is validated first; the deposits are pulled with a **single** token transfer; streams are then persisted in row order, so the returned ids are consecutive.
 - Atomic: an invalid row or a failed transfer reverts the whole call — no partial batches.
 - Each stream emits the normal `created` event; batch membership is visible off-chain through the shared transaction hash.
-- Errors: `EmptyBatch` (19), `BatchTooLarge` (20), `InvalidPeriod` (21), `InvalidCount` (22) plus the per-shape create errors.
+- Errors: `EmptyBatch` (19) and `BatchTooLarge` (20) are batch-level errors; `InvalidPeriod` (21) and `InvalidCount` (22) are Recurring-row validation errors (also raised by `create_recurring`), plus the per-shape create errors.
 - Practical limit measured on testnet (smoke probe, linear rows): **30 rows per transaction**. Tranched rows with many tranches fit fewer.
 
 ---
 
 ## 8. Fee Model
 
-Fees are denominated in USD and collected in XLM at stream creation. The fee amount is fetched from the comptroller, which queries the Reflector oracle for the current XLM/USD price.
+Fees are denominated in USD and collected in XLM on each `withdraw`/`withdraw_max` call, paid by the recipient. The fee amount is fetched from the comptroller, which queries the Reflector oracle for the current XLM/USD price; the charge is skipped entirely when the configured fee is 0.
 
-**Current testnet fee:** configurable (default: $1 USD equivalent in XLM)
+**Current testnet fee:** configurable (currently set to 0 on testnet)
 
-No fee is charged on withdrawals, cancels, or any subsequent operations — only at stream creation.
+No fee is charged at stream creation, cancel, renounce, transfer, or burn — only on withdrawal.
 
 ---
 
@@ -400,7 +400,8 @@ included above. (One 64-hex value in the Task 9 deploy log,
 uploaded WASM's hash, not a transaction hash, and is omitted from this
 list for that reason.)
 
-Source: `.superpowers/sdd/2026-09-10-batch-recurring-streams/task-9-report.md`.
+These hashes are the record of the smoke run; they can be looked up
+directly on stellar.expert using the links above.
 
 ---
 
