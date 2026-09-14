@@ -107,18 +107,44 @@ export function buildStreamsQuery(sp: URLSearchParams, now: number): StreamsQuer
   const limit = optInt(sp, 'limit', { min: 1, max: 100, def: legacy ? 100 : 50 });
 
   // Merge: plain object clauses are combined by key; $or clauses need $and.
-  const plain: Filter<StreamDoc> = {};
-  const ors: Filter<StreamDoc>[] = [];
+  // Guard against a plain-clause key collision first — Object.assign would
+  // silently drop an earlier constraint on the same key (e.g. an exact
+  // `token=` alongside a `q=` prefix match on `token`, or a legacy
+  // `sender=` alongside `address=`+`role=sender`). When two or more plain
+  // clauses target the same key, every clause (plain and $or alike) becomes
+  // its own $and element, in the order they were pushed, so no constraint
+  // is lost.
+  const isOrOnly = (c: Filter<StreamDoc>) => '$or' in c && Object.keys(c).length === 1;
+  const seenKeys = new Set<string>();
+  let collision = false;
   for (const c of clauses) {
-    if ('$or' in c && Object.keys(c).length === 1) ors.push(c);
-    else Object.assign(plain, c);
+    if (isOrOnly(c)) continue;
+    for (const k of Object.keys(c)) {
+      if (seenKeys.has(k)) {
+        collision = true;
+        break;
+      }
+      seenKeys.add(k);
+    }
+    if (collision) break;
   }
+
   let filter: Filter<StreamDoc>;
-  const hasPlain = Object.keys(plain).length > 0;
-  if (ors.length === 0) filter = plain;
-  else if (ors.length === 1 && !hasPlain) filter = ors[0];
-  else if (ors.length === 1) filter = { ...plain, ...ors[0] };
-  else filter = { $and: [...(hasPlain ? [plain] : []), ...ors] };
+  if (collision) {
+    filter = { $and: clauses } as Filter<StreamDoc>;
+  } else {
+    const plain: Filter<StreamDoc> = {};
+    const ors: Filter<StreamDoc>[] = [];
+    for (const c of clauses) {
+      if (isOrOnly(c)) ors.push(c);
+      else Object.assign(plain, c);
+    }
+    const hasPlain = Object.keys(plain).length > 0;
+    if (ors.length === 0) filter = plain;
+    else if (ors.length === 1 && !hasPlain) filter = ors[0];
+    else if (ors.length === 1) filter = { ...plain, ...ors[0] };
+    else filter = { $and: [...(hasPlain ? [plain] : []), ...ors] };
+  }
 
   return { filter, sort: { [sortField]: dir, _id: dir }, sortField, order, limit };
 }

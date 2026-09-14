@@ -85,6 +85,16 @@ describe('token, model, q', () => {
       ],
     });
   });
+  it('keeps both constraints when q and token target the same field', () => {
+    expect(q(`token=${C1}&q=CCP7`).filter).toEqual({
+      $and: [{ token: C1 }, { token: { $regex: '^CCP7' } }],
+    });
+  });
+  it('keeps both constraints when a legacy sender and address/role=sender collide', () => {
+    expect(q(`sender=${G1}&address=${G2}&role=sender`).filter).toEqual({
+      $and: [{ sender: G1 }, { sender: G2 }],
+    });
+  });
 });
 
 describe('sort, order, limit, cursor', () => {
