@@ -2222,11 +2222,10 @@ async function main(): Promise<void> {
           const p = parseEvent(e);
           if (!p) return;
           console.log(`[indexer] ${p.action} stream=${p.streamId} ledger=${p.ledger} tx=${p.tx_hash.slice(0, 8)}…`);
-          try {
-            await handleEvent(p, { chain, store, contractId: CONTRACT, now: nowSec });
-          } catch (err) {
-            console.error('[indexer] error handling event:', err);
-          }
+          // Deliberately NOT wrapped in try/catch: a failing event must abort the
+          // page before its cursor is saved, so the page is re-fetched next tick
+          // (idempotent). Swallowing here would advance past the lost event.
+          await handleEvent(p, { chain, store, contractId: CONTRACT, now: nowSec });
         },
       );
       if (r.events > 0) console.log(`[indexer] ingested ${r.events} event(s) over ${r.pages} page(s)`);
