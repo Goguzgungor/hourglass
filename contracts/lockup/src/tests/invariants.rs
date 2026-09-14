@@ -165,5 +165,8 @@ fn asset_conservation_across_batch() {
         refunded += s.refunded;
     }
     let in_contract = f.token_client.balance(&f.lockup_addr);
+    // Guard against a vacuous pass: both lifecycle calls must have moved funds.
+    assert!(withdrawn > 0, "withdraw_max moved nothing");
+    assert!(refunded > 0, "cancel refunded nothing");
     assert_eq!(deposited, withdrawn + refunded + in_contract);
 }

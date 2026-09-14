@@ -89,6 +89,25 @@ fn count_created_events(f: &Fixture<'_>) -> usize {
         .count()
 }
 
+/// Count SEP-41 `transfer` events emitted by the stream token in the last
+/// invocation — proves the batch pulled its deposits with ONE transfer.
+fn count_token_transfer_events(f: &Fixture<'_>) -> usize {
+    f.env
+        .events()
+        .all()
+        .filter_by_contract(&f.token)
+        .events()
+        .iter()
+        .filter(|e| {
+            let ContractEventBody::V0(v0) = &e.body;
+            matches!(
+                v0.topics.get(0),
+                Some(ScVal::Symbol(s)) if s.to_utf8_string_lossy() == "transfer"
+            )
+        })
+        .count()
+}
+
 #[test]
 fn batch_creates_mixed_rows_with_one_transfer() {
     let f = setup();
@@ -106,6 +125,7 @@ fn batch_creates_mixed_rows_with_one_transfer() {
     let ids = f.lockup.create_batch(&f.sender, &f.token, &rows);
     // Must run before any other invocation: events().all() only holds the last call's events.
     assert_eq!(count_created_events(&f), 3);
+    assert_eq!(count_token_transfer_events(&f), 1);
     assert_eq!(ids, vec![&f.env, 1u32, 2u32, 3u32]);
 
     let total = LINEAR_DEPOSIT + RECURRING_TOTAL + TRANCHED_TOTAL;
