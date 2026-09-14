@@ -92,8 +92,8 @@ for page in 1..=INDEXER_MAX_PAGES (default 20):
 `lib/indexer/reconcile.ts`, run once at startup (after indexes) and every `INDEXER_RECONCILE_MS` (default 600 000 ms), and on demand after a retention reset. Concurrency for view calls: 5.
 
 1. **Enumerate live streams.** `n = total_supply()`; `liveIds = { get_token_id(i) | i in 0..n }`. (The lockup embeds OpenZeppelin's Enumerable NFT extension; every un-burned stream has exactly one NFT with `token_id == stream_id`.)
-2. **Upsert missing / non-terminal.** For each `id ∈ liveIds` where Mongo has no doc, or the doc has `!was_canceled && !is_depleted`: `get_stream(id)` → upsert the materialized fields (same mapping as the `created` handler). Docs discovered this way get `source: 'reconcile'`; `created_tx`/`created_ledger` stay unset and `created_at` defaults to `start_ts` when unknown.
-3. **Mark burned.** For each Mongo doc with `_id ∉ liveIds` and `!is_depleted`: set `is_depleted = true, updated_at = now` (the NFT was burned; the on-chain record is gone).
+2. **Upsert missing / not-yet-depleted.** For each `id ∈ liveIds` where Mongo has no doc, or the doc is not `is_depleted`: `get_stream(id)` → upsert the materialized fields (same mapping as the `created` handler). A canceled stream is NOT terminal — withdrawals (and `withdraw_max_and_transfer`) stay legal until it is depleted — so only `is_depleted` excludes a doc from refresh. Docs discovered this way get `source: 'reconcile'`; `created_tx`/`created_ledger` stay unset and `created_at` defaults to `start_ts` when unknown (a schedule time, not a ledger time). If the stream's `created` event is ingested later, its provenance is written with `$set` (a stream has exactly one `created` event, so it is authoritative).
+3. **Mark burned — after verification.** For each Mongo doc with `_id ∉ liveIds` and `!is_depleted`, call `get_stream(id)` first: the enumeration (`total_supply` + `get_token_id(i)`) is not an atomic snapshot, and a burn mid-scan can hide a still-live id. A record → refresh it as in step 2; `null` → set `is_depleted = true, updated_at = now` (the NFT was burned; the on-chain record is gone). Without the check a false depletion would be sticky, because depleted docs are never refreshed.
 4. Persist `meta.last_reconcile = { at, live: n, upserted, depleted }` for the health log.
 
 Cost: `n + 1 + (non-terminal count)` view simulations per cycle — fine for the beta's scale (hundreds of streams); the interval is tunable.
@@ -152,7 +152,7 @@ All routes: `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`; invalid parameter
 |---|---|---|
 | `address` | `G…` | with `role` |
 | `role` | `sender` \| `recipient` \| `any` (default) | `any` → `$or` on both fields |
-| `status` | comma list of `pending,streaming,settled,canceled,depleted`; legacy `active` / `inactive` still accepted | time-dependent members evaluated with `$expr` against `now` |
+| `status` | comma list of `pending,streaming,settled,canceled,depleted`; legacy `active` / `inactive` still accepted | time-dependent members are plain range comparisons against the server's `now` (indexable) |
 | `token` | `C…` | exact |
 | `model` | `Linear` \| `Tranched` \| `Recurring` | exact |
 | `q` | text | all digits → `_id` exact; starts with `G` → sender/recipient prefix; starts with `C` → token prefix; otherwise ignored (never a full-collection regex) |
@@ -230,7 +230,7 @@ docker-compose.yml                   INDEXER_RECONCILE_MS, INDEXER_MAX_PAGES (de
 ## 12. Risks & Notes
 
 - **Reconcile cost grows linearly** with live streams; at thousands of streams the interval should be raised or the enumeration cached — noted for mainnet planning.
-- **`$expr` status filters** cannot use indexes for the time-dependent members; acceptable at beta scale, and the address/role index narrows first.
+- **Time-dependent status filters** are plain range comparisons on `start_ts`/`end_ts` against the server's `now`, so they can use the `end_ts` index; the address/role index narrows first.
 - **History gaps** after retention resets are inherent; the API could later expose `meta.last_reconcile` so the UI can show "history may be incomplete before <ledger>".
 - **Stacked branch:** rebase onto `main` once PR #1 merges; no contract or SDK changes here, so conflicts are unlikely.
 
