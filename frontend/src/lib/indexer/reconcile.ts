@@ -1,7 +1,7 @@
 // Converge the materialized `streams` collection to on-chain truth using the
 // NFT enumeration (every un-burned stream has exactly one NFT, token_id == id).
 
-import { mapStream, type ChainReader } from './chain';
+import { mapStream, type ChainReader, type StreamChain } from './chain';
 import type { IndexerStore } from './store';
 
 export interface ReconcileOptions {
@@ -52,27 +52,41 @@ export async function reconcile(
     const h = known.get(id);
     return !h || (!h.was_canceled && !h.is_depleted);
   });
-  const results = await mapLimit(toFetch, opts.concurrency, async (id) => {
-    const s = await chain.getStream(id);
-    if (!s) return false;
+  const upsertFromChain = async (id: number, s: StreamChain) => {
     const fields = mapStream(s);
     await store.upsertStream(
       id,
       { ...fields, contract: opts.contractId, updated_at: now, source: 'reconcile' },
       { created_at: fields.start_ts ?? now },
     );
+  };
+  const results = await mapLimit(toFetch, opts.concurrency, async (id) => {
+    const s = await chain.getStream(id);
+    if (!s) return false;
+    await upsertFromChain(id, s);
     return true;
   });
-  const upserted = results.filter(Boolean).length;
+  let upserted = results.filter(Boolean).length;
 
-  // 3. Streams we know but the chain no longer lists were burned.
-  let depleted = 0;
-  for (const h of heads) {
-    if (!live.has(h._id) && !h.is_depleted) {
+  // 3. Streams we know that the enumeration no longer lists look burned — but
+  // `total_supply` + `get_token_id` is not an atomic snapshot: a burn landing
+  // mid-scan shifts the remaining indices, so a still-live id can silently drop
+  // out of `live`. Marking it depleted would be sticky (depleted docs are
+  // terminal, so step 2 never refreshes them again), so confirm each candidate
+  // with `get_stream` before writing it off: a record that still exists means
+  // the enumeration raced, and the stream is refreshed like any other live one.
+  const suspects = heads.filter((h) => !live.has(h._id) && !h.is_depleted);
+  const verdicts = await mapLimit(suspects, opts.concurrency, async (h) => {
+    const s = await chain.getStream(h._id);
+    if (!s) {
       await store.markDepleted(h._id, now);
-      depleted++;
+      return 'depleted' as const;
     }
-  }
+    await upsertFromChain(h._id, s);
+    return 'upserted' as const;
+  });
+  const depleted = verdicts.filter((v) => v === 'depleted').length;
+  upserted += verdicts.length - depleted;
 
   const result = { live: live.size, upserted, depleted };
   await store.saveReconcileMeta({ at: now, ...result });
