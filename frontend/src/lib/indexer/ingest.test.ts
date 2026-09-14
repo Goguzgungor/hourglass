@@ -42,9 +42,10 @@ describe('fetchAndIngest', () => {
     expect(r).toEqual({ pages: 3, events: 250, reset: false });
     expect(seen).toHaveLength(250);
     expect(new Set(seen).size).toBe(250);
-    expect(calls[0]).toMatchObject({ startLedger: 4_900, limit: 100 });
-    expect(calls[1]).toMatchObject({ cursor: 'c1', limit: 100 });
-    expect(calls[2]).toMatchObject({ cursor: 'c2', limit: 100 });
+    const filters = [{ type: 'contract', contractIds: ['CLOCKUP'] }];
+    expect(calls[0]).toMatchObject({ startLedger: 4_900, limit: 100, filters });
+    expect(calls[1]).toMatchObject({ cursor: 'c1', limit: 100, filters });
+    expect(calls[2]).toMatchObject({ cursor: 'c2', limit: 100, filters });
     expect(store.cursorSaves.map((s) => s.cursor)).toEqual(['c1', 'c2', 'c3']);
     expect(store.cursor).toEqual({ cursor: 'c3', ledger: 5_000 });
   });
@@ -72,6 +73,27 @@ describe('fetchAndIngest', () => {
     const store = new MemoryIndexerStore();
     const server = { async getEvents() { throw new Error('boom'); }, async getLatestLedger() { return { sequence: 1 }; } };
     await expect(fetchAndIngest(server, store, opts, async () => {})).rejects.toThrow('boom');
+  });
+  it('rethrows a non-retention error that merely mentions "cursor"', async () => {
+    const store = new MemoryIndexerStore();
+    store.cursor = { cursor: 'stale', ledger: 10 };
+    const server = {
+      async getEvents() { throw new Error('cursor parameter is required'); },
+      async getLatestLedger() { return { sequence: 9_000 }; },
+    };
+    await expect(fetchAndIngest(server, store, opts, async () => {})).rejects.toThrow('cursor parameter is required');
+    expect(store.cursor).toEqual({ cursor: 'stale', ledger: 10 });
+  });
+  it('resets on a retention error that mentions "cursor" alongside a qualifier', async () => {
+    const store = new MemoryIndexerStore();
+    store.cursor = { cursor: 'stale', ledger: 10 };
+    const server = {
+      async getEvents() { throw new Error('invalid cursor: before oldest ledger'); },
+      async getLatestLedger() { return { sequence: 9_000 }; },
+    };
+    const r = await fetchAndIngest(server, store, opts, async () => {});
+    expect(r).toEqual({ pages: 0, events: 0, reset: true });
+    expect(store.cursor).toEqual({ cursor: null, ledger: 8_900 });
   });
 });
 

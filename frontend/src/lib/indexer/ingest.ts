@@ -36,14 +36,25 @@ export function participantsFor(
   return out;
 }
 
+// A bare mention of "cursor" in an error message is not enough on its own —
+// e.g. "cursor parameter is required" is a caller bug, not exhausted
+// retention — so that word only counts alongside a qualifier that actually
+// describes a retention failure.
+const CURSOR_RETENTION_QUALIFIERS = ['invalid', 'before', 'retention', 'expired', 'unknown'];
+
 function isRetentionError(err: unknown): boolean {
   const msg = ((err as Error)?.message ?? String(err)).toLowerCase();
-  return msg.includes('oldest') || msg.includes('cursor');
+  if (msg.includes('oldest')) return true;
+  if (msg.includes('cursor')) return CURSOR_RETENTION_QUALIFIERS.some((k) => msg.includes(k));
+  return false;
 }
 
 /**
  * Fetch every event since the saved cursor state, page by page, persisting
  * the RPC cursor after each page so a crash resumes exactly where it stopped.
+ * A throwing `handleRaw` aborts the page before its cursor is saved, so the
+ * whole page is re-fetched next tick; callers must not swallow errors inside
+ * `handleRaw`.
  */
 export async function fetchAndIngest(
   rpcServer: EventsRpc,
