@@ -1,57 +1,40 @@
-// GET /api/streams?sender=<G…>&recipient=<G…>&status=<active|inactive>
-//
-// Reads the materialized `streams` collection. Supports filtering by sender,
-// recipient, or status. Mongo driver requires the Node runtime (not Edge).
-//
-// The query is always forced dynamic — caching would defeat the purpose of
-// the dashboard ("show me my live state").
+// GET /api/streams — list/search/filter/sort/paginate the materialized streams.
+// See docs/superpowers/specs/2026-09-14-indexer-api-v2-design.md §9 for params.
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { streamsCollection, type StreamDoc } from '@/lib/db';
-import type { Filter } from 'mongodb';
+import { streamsCollection } from '@/lib/db';
+import { ParamError } from '@/lib/api/params';
+import { buildStreamsQuery, nextStreamsCursor } from '@/lib/api/streamsQuery';
+import { deriveStatus, withdrawableNow } from '@/lib/streaming';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_LIMIT = 200;
-
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(req.url);
-  const sender = searchParams.get('sender');
-  const recipient = searchParams.get('recipient');
-  const status = searchParams.get('status'); // 'active' | 'inactive' | null
-  const limitParam = Number.parseInt(searchParams.get('limit') ?? '', 10);
-  const limit =
-    Number.isFinite(limitParam) && limitParam > 0
-      ? Math.min(limitParam, MAX_LIMIT)
-      : 100;
+  const now = Math.floor(Date.now() / 1000);
 
-  const filter: Filter<StreamDoc> = {};
-  if (sender) filter.sender = sender;
-  if (recipient) filter.recipient = recipient;
-
-  if (status === 'active') {
-    filter.was_canceled = false;
-    filter.is_depleted = false;
-  } else if (status === 'inactive') {
-    filter.$or = [{ was_canceled: true }, { is_depleted: true }];
+  let q;
+  try {
+    q = buildStreamsQuery(searchParams, now);
+  } catch (err) {
+    if (err instanceof ParamError) return NextResponse.json({ error: err.message }, { status: 400 });
+    throw err;
   }
 
   try {
     const col = await streamsCollection();
-    const docs = await col
-      .find(filter)
-      .sort({ created_at: -1, _id: -1 })
-      .limit(limit)
-      .toArray();
-    return NextResponse.json({ streams: docs });
+    const docs = await col.find(q.filter).sort(q.sort).limit(q.limit + 1).toArray();
+    const page = docs.slice(0, q.limit);
+    const next_cursor = docs.length > q.limit ? nextStreamsCursor(page[page.length - 1], q.sortField) : null;
+    const streams = page.map((d) => ({
+      ...d,
+      status: deriveStatus(d, now),
+      withdrawable_now: withdrawableNow(d, now).toString(),
+    }));
+    return NextResponse.json({ streams, next_cursor, now });
   } catch (err) {
-    // Likely cause in local dev: mongo isn't running. Surface a clear error
-    // so the dashboard can render an empty state instead of a hard crash.
     const msg = (err as Error).message ?? String(err);
-    return NextResponse.json(
-      { streams: [], error: `db unreachable: ${msg}` },
-      { status: 503 },
-    );
+    return NextResponse.json({ streams: [], next_cursor: null, now, error: `db unreachable: ${msg}` }, { status: 503 });
   }
 }
