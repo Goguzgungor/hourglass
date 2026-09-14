@@ -31,7 +31,11 @@ services:
       INDEXER_MAX_PAGES: "20"
     depends_on:
       - mongodb
-    command: npm run indexer
+    # tsx directly, not `npm run indexer`: npm would sit between the container's
+    # PID 1 and the indexer, so SIGTERM on `docker compose stop` never reaches
+    # the loop's shutdown handler and the container is killed after the grace
+    # period instead of finishing its tick.
+    command: ["npx", "tsx", "scripts/indexer.ts"]
 
 volumes:
   mongodb_data:

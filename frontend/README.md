@@ -92,21 +92,38 @@ transient RPC hiccups. It combines two mechanisms:
   every page — so a crash between pages resumes exactly where it stopped,
   with no gap and no double-count. On first boot (no cursor yet) it starts
   100 ledgers behind the latest, to absorb ledger-close jitter. If the RPC
-  rejects the cursor (retention error — the node pruned history past it),
-  the indexer resets to `{ cursor: null, ledger: latest - 100 }` and
-  schedules an immediate reconcile, since events in the gap were certainly
-  missed.
+  rejects our position because the node pruned history past it, the indexer
+  resets to `{ cursor: null, ledger: latest - 100 }` and schedules an
+  immediate reconcile, since events in the gap were certainly missed. The
+  public RPC answers both a stale `startLedger` and a stale `cursor` with
+  the same JSON-RPC error — code `-32600`, message `startLedger must be
+  within the ledger range: 4556625 - 4677584` — which is what the retention
+  check matches (along with the older `oldest ledger` / `invalid cursor`
+  phrasings). Anything else rethrows and is logged as `tick failed`.
 - **Reconcile — chain-truth reconciliation via NFT enumeration**
   (`src/lib/indexer/reconcile.ts`), run once at startup (self-healing after
   any downtime) and every `INDEXER_RECONCILE_MS`, plus on demand after a
   retention reset. It walks the lockup's Enumerable-NFT extension
   (`total_supply` + `get_token_id(i)` for every live token) to get the exact
   set of currently-live stream ids, upserts any that are missing or stale in
-  Mongo (tagged `source: 'reconcile'` until a later `created` event fills in
-  `created_tx`/`created_ledger` with `source: 'event'`), and marks streams
-  that disappeared from the enumeration (after a defensive re-check) as
-  depleted. This is what makes the index lossless even across missed events,
-  restarts, or gaps beyond RPC retention.
+  Mongo (a doc reconcile inserted is tagged `source: 'reconcile'`; a later
+  `created` event still fills in `created_tx`/`created_ledger` and flips
+  `source` to `'event'`, but a refresh of an event-ingested doc never
+  rewrites its `source`), and marks streams that disappeared from the
+  enumeration (after a defensive re-check) as depleted. This is what makes
+  the index lossless even across missed events, restarts, or gaps beyond RPC
+  retention. Reconcile scheduling is independent of ingestion: a tick whose
+  `fetchAndIngest` throws is logged and the periodic/reset reconcile still
+  runs, so an RPC that rejects every `getEvents` call cannot also starve the
+  self-healing path.
+
+  **Catch-up caveat.** An action materialized live carries the stream's
+  `participants` as of the moment the indexer fetched the stream — normally
+  the same block, but after a long outage a `withdrawn` action replayed
+  behind a later `transferred` records the *current* recipient rather than
+  the one at the time. `backfillParticipants()` (run at startup) is the
+  authoritative reconstruction: it recomputes each action's recipient at its
+  own `(ts, log_index)` from the stream's transfer history.
 
 Uses the existing local Mongo container (`id-mongodb-1` at
 `localhost:27017`) by default. Override with `MONGODB_URL` / `MONGODB_DB`
@@ -154,9 +171,18 @@ will populate.
 
 All routes: `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`; invalid
 parameters return `400 { error }`; a database that's unreachable returns
-`503 { error, ...empty payload }`. Every list response includes `now`
+`503 { error, ...empty payload }`. Every list response except
+`GET /api/tokens` (which has no time-dependent field) includes `now`
 (server unix seconds) so clients can render time-dependent values (status,
 withdrawable amount) consistently with the server.
+
+`withdrawable_now` is `max(0, min(streamed(now), deposited − refunded) −
+withdrawn)`, and `0` for a depleted stream — i.e. it is capped at the
+stream's own remaining balance and never advertises the refunded portion of
+a canceled stream. The on-chain `withdraw` does not yet apply that cap (see
+`docs/superpowers/plans/2026-09-14-lockup-v0.2-followups.md`), so for a
+canceled stream the API figure can be lower than what the contract would
+currently pay out.
 
 ### `GET /api/streams`
 
@@ -171,7 +197,7 @@ withdrawable amount) consistently with the server.
 | `sort` / `order` | `created_at` (default) \| `start_ts` \| `end_ts`; `desc` (default) \| `asc` | tie-broken on `_id` |
 | `limit` | 1–100 (default 50) | |
 | `cursor` | opaque | base64url of `{ k: <sort value>, id: <_id> }` from the previous page |
-| legacy `sender=` / `recipient=` | | mapped to `address` + `role` |
+| legacy `sender=` / `recipient=` | `G…` | dashboard v1 compatibility: each is an exact match on its own field, and passing both ANDs them (not an `$or`). Independent of `address`/`role`, which still apply on top. Their presence also raises the default `limit` to 100 |
 
 Response: `{ streams: (StreamDoc & { status, withdrawable_now: string })[], next_cursor: string | null, now }`.
 
