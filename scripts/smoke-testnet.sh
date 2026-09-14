@@ -46,8 +46,6 @@ fund() {
     done
 }
 
-strip_num() { echo "$1" | tr -d '" ' ; }
-
 # ---------------------------------------------------------------- recipients
 RECIPIENT_KEY="hgt-smoke-recipient-$(date +%s)"
 stellar keys generate "$RECIPIENT_KEY" --network "$NETWORK" 2>>"$LOG"
@@ -64,20 +62,20 @@ START="$((NOW + 15))"
 CLIFF="$((START + 30))"
 END="$((START + 600))"
 echo "==> create_linear (10 XLM over 10 minutes, 30s cliff)"
-LINEAR_ID="$(strip_num "$(invoke hourglass-user create_linear \
+LINEAR_ID="$(invoke hourglass-user create_linear \
     --sender "$SENDER" --recipient "$RECIPIENT" --token "$TOKEN" \
     --deposited 100000000 --start_ts "$START" --cliff_ts "$CLIFF" --end_ts "$END" \
     --unlock_at_start 0 --unlock_at_cliff 1000000 \
-    --is_cancelable true --is_transferable true)")"
+    --is_cancelable true --is_transferable true | tr -d '" ')"
 echo "Linear stream id: $LINEAR_ID"
 
 # ---------------------------------------------------------------- 2. recurring
 FIRST="$((NOW + 20))"
 echo "==> create_recurring (3 x 1 XLM, every 60s, first at +20s)"
-RECURRING_ID="$(strip_num "$(invoke hourglass-user create_recurring \
+RECURRING_ID="$(invoke hourglass-user create_recurring \
     --sender "$SENDER" --recipient "$RECIPIENT" --token "$TOKEN" \
     --amount_per_period 10000000 --period_secs 60 --count 3 --first_ts "$FIRST" \
-    --is_cancelable true --is_transferable true)")"
+    --is_cancelable true --is_transferable true | tr -d '" ')"
 echo "Recurring stream id: $RECURRING_ID"
 invoke hourglass-user get_stream --stream_id "$RECURRING_ID" | jq -c '{start_ts, end_ts, deposited, shape}'
 
@@ -114,7 +112,7 @@ fi
 echo "==> Waiting for the linear cliff and the first recurring unlock"
 sleep 50
 
-WITHDRAWABLE="$(strip_num "$(invoke "$RECIPIENT_KEY" withdrawable_amount --stream_id "$LINEAR_ID")")"
+WITHDRAWABLE="$(invoke "$RECIPIENT_KEY" withdrawable_amount --stream_id "$LINEAR_ID" | tr -d '" ')"
 echo "Linear withdrawable: $WITHDRAWABLE stroops"
 if ! [[ "$WITHDRAWABLE" =~ ^[0-9]+$ ]] || [ "$WITHDRAWABLE" -lt 1 ]; then
     echo "ERROR: expected linear withdrawable > 0, got '$WITHDRAWABLE'"
@@ -122,7 +120,7 @@ if ! [[ "$WITHDRAWABLE" =~ ^[0-9]+$ ]] || [ "$WITHDRAWABLE" -lt 1 ]; then
 fi
 invoke "$RECIPIENT_KEY" withdraw_max --stream_id "$LINEAR_ID" --to "$RECIPIENT" >/dev/null
 
-REC_WITHDRAWABLE="$(strip_num "$(invoke "$RECIPIENT_KEY" withdrawable_amount --stream_id "$RECURRING_ID")")"
+REC_WITHDRAWABLE="$(invoke "$RECIPIENT_KEY" withdrawable_amount --stream_id "$RECURRING_ID" | tr -d '" ')"
 echo "Recurring withdrawable: $REC_WITHDRAWABLE stroops"
 if ! [[ "$REC_WITHDRAWABLE" =~ ^[0-9]+$ ]] || [ "$REC_WITHDRAWABLE" -lt 10000000 ]; then
     echo "ERROR: expected recurring withdrawable >= 10000000 (one period), got '$REC_WITHDRAWABLE'"
@@ -132,7 +130,7 @@ invoke "$RECIPIENT_KEY" withdraw_max --stream_id "$RECURRING_ID" --to "$RECIPIEN
 REC_STATE="$(invoke hourglass-user get_stream --stream_id "$RECURRING_ID")"
 echo "Recurring after withdraw: $(echo "$REC_STATE" | jq -c '{deposited, withdrawn}')"
 REC_WITHDRAWN="$(echo "$REC_STATE" | jq -r '.withdrawn' | tr -d '"')"
-if [ "$REC_WITHDRAWN" -lt 10000000 ]; then
+if ! [[ "$REC_WITHDRAWN" =~ ^[0-9]+$ ]] || [ "$REC_WITHDRAWN" -lt 10000000 ]; then
     echo "ERROR: recurring withdrawn should be >= 10000000, got $REC_WITHDRAWN"
     exit 1
 fi
@@ -146,9 +144,9 @@ curl -s "${HORIZON_URL}/accounts/${RECIPIENT}" \
 # PROBE_BATCH=1 tries growing linear batches and reports the largest that fits
 # the per-tx resource budget. Creates real (tiny) streams to the recipient.
 if [ "${PROBE_BATCH:-0}" = "1" ]; then
-    PSTART="$(( $(date +%s) + 120 ))"
     LARGEST=0
     for n in 10 20 30 40 50; do
+        PSTART="$(( $(date +%s) + 120 ))"
         PROWS="$(jq -nc --arg r "$RECIPIENT" --argjson s "$PSTART" --argjson n "$n" \
             '[range($n)] | map({ recipient: $r, is_cancelable: true, is_transferable: true,
                 spec: { Linear: { deposited: "1000", start_ts: $s, cliff_ts: $s, end_ts: ($s + 600),
@@ -166,7 +164,7 @@ fi
 
 echo ""
 echo "==> Transaction hashes (evidence):"
-grep -oE '\b[0-9a-f]{64}\b' "$LOG" | sort -u
+grep -oE '\b[0-9a-f]{64}\b' "$LOG" | sort -u || true
 
 echo ""
 echo "==> Stream ids: linear=$LINEAR_ID recurring=$RECURRING_ID batch=$BATCH_IDS"
