@@ -1770,6 +1770,15 @@ describe('handleEvent', () => {
     expect(store.actions).toHaveLength(1);
     expect(store.actions[0]).toMatchObject({ action: 'created', actor: 'GSENDER', participants: ['GSENDER', 'GRECIP'] });
   });
+  it('created: overwrites provenance a reconcile-first insert guessed', async () => {
+    const chain = new FakeChain(new Map([[1, chainStream()]]));
+    const store = new MemoryIndexerStore();
+    // Reconcile saw the stream before the event did: created_at is the start_ts
+    // guess and there is no tx/ledger. The `created` event is authoritative.
+    store.streams.set(1, { _id: 1, sender: 'GSENDER', recipient: 'GRECIP', source: 'reconcile', created_at: 1_000, was_canceled: false, is_depleted: false } as never);
+    await handleEvent(parsed({}), { chain, store, contractId: 'CLOCKUP', now });
+    expect(store.streams.get(1)).toMatchObject({ created_tx: 'h1', created_ledger: 100, created_at: 1_500, source: 'event' });
+  });
   it('withdrawn: refreshes the stream and records amount/actor/to', async () => {
     const chain = new FakeChain(new Map([[1, chainStream({ withdrawn: 250n })]]));
     const store = new MemoryIndexerStore();
@@ -1946,7 +1955,11 @@ export async function handleEvent(
   switch (p.action) {
     case 'created': {
       action.actor = String(p.topics[3] ?? '');
-      await refresh({}, { created_ledger: p.ledger, created_tx: p.tx_hash, created_at: p.ts });
+      // Provenance goes in `$set`, not `$setOnInsert`: a reconcile pass may have
+      // inserted this doc first (with `created_at` = `start_ts` and no tx), and
+      // `$setOnInsert` would then never land. A stream has exactly one `created`
+      // event, so these three fields are authoritative wherever they arrive.
+      await refresh({ created_ledger: p.ledger, created_tx: p.tx_hash, created_at: p.ts });
       break;
     }
     case 'withdrawn': {
@@ -2045,6 +2058,35 @@ describe('reconcile', () => {
     expect(chain.calls.getStream).toBe(3);
     expect(store.reconcileMeta).toMatchObject({ at: 5_000, live: 3, upserted: 2, depleted: 1 });
   });
+  it('refreshes canceled-but-not-depleted streams', async () => {
+    // Cancelling does not end a stream: withdrawing stays legal until the
+    // balance is drained, so the doc keeps changing after `was_canceled`.
+    const chain = new FakeChain(new Map([[1, chainStream({ was_canceled: true, withdrawn: 5n })]]));
+    const store = new MemoryIndexerStore();
+    store.streams.set(1, { _id: 1, was_canceled: true, is_depleted: false, withdrawn: '0' } as never);
+    const r = await reconcile(chain, store, opts);
+    expect(store.streams.get(1)!.withdrawn).toBe('5');
+    expect(store.streams.get(1)!.is_depleted).toBe(false);
+    expect(r.upserted).toBe(1);
+  });
+  it('treats a non-finite concurrency as 1 instead of spawning zero workers', async () => {
+    const chain = new FakeChain(new Map([
+      [1, chainStream({ withdrawn: 10n })],
+      [2, chainStream({ was_canceled: true, is_depleted: true })],
+      [4, chainStream()],
+    ]));
+    const store = new MemoryIndexerStore();
+    store.streams.set(1, { _id: 1, was_canceled: false, is_depleted: false, withdrawn: '0' } as never);
+    store.streams.set(2, { _id: 2, was_canceled: true, is_depleted: true } as never);
+    store.streams.set(3, { _id: 3, was_canceled: false, is_depleted: false } as never);
+
+    const r = await reconcile(chain, store, { ...opts, concurrency: NaN });
+    expect(r).toEqual({ live: 3, upserted: 2, depleted: 1 });
+    expect(store.streams.get(1)!.withdrawn).toBe('10');
+    expect(store.streams.get(4)).toMatchObject({ _id: 4, source: 'reconcile' });
+    expect(store.streams.get(3)!.is_depleted).toBe(true);
+    expect(chain.calls.getStream).toBe(3);
+  });
   it('does nothing on an empty chain and empty store', async () => {
     const r = await reconcile(new FakeChain(new Map()), new MemoryIndexerStore(), opts);
     expect(r).toEqual({ live: 0, upserted: 0, depleted: 0 });
@@ -2070,7 +2112,11 @@ describe('reconcile', () => {
     const store = new MemoryIndexerStore();
     store.streams.set(1, { _id: 1, created_tx: 'h1', created_ledger: 9, created_at: 900, was_canceled: false, is_depleted: false } as never);
     await reconcile(chain, store, opts);
-    expect(store.streams.get(1)).toMatchObject({ created_tx: 'h1', created_ledger: 9, created_at: 900 });
+    // `source`/`updated_at` prove the doc really was refreshed, so the surviving
+    // provenance is not just an untouched doc.
+    expect(store.streams.get(1)).toMatchObject({
+      created_tx: 'h1', created_ledger: 9, created_at: 900, source: 'reconcile', updated_at: 5_000,
+    });
   });
 });
 ```
@@ -2096,21 +2142,39 @@ export interface ReconcileOptions {
 }
 
 export interface ReconcileResult {
+  /**
+   * Size of the deduped enumerated id set; may be below `total_supply` during a
+   * race — a burn mid-scan shifts the remaining indices, so an id can be missed
+   * (step 3 verifies those) or enumerated twice (the `Set` collapses them).
+   */
   live: number;
   upserted: number;
   depleted: number;
 }
 
+/** What one stream's pass actually did, so totals are counted and never inferred. */
+type Verdict = 'upserted' | 'depleted' | 'skipped';
+
+/**
+ * Run `fn` over `items` with at most `limit` calls in flight, preserving order.
+ * One rejected call rejects the whole pass; sibling workers already in flight
+ * are NOT cancelled and their writes stand. That is safe here because every
+ * write is an idempotent upsert — the next pass redoes them.
+ */
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+  // A non-finite or sub-1 `limit` (NaN from a bad env var, 0, -1) must never
+  // spawn zero workers: that resolves immediately with a sparse array of
+  // `undefined`s, which callers would read as work successfully done.
+  const workers = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 1;
+  const pool = Array.from({ length: Math.max(1, Math.min(workers, items.length)) }, async () => {
     while (next < items.length) {
       const i = next++;
       out[i] = await fn(items[i]);
     }
   });
-  await Promise.all(workers);
+  await Promise.all(pool);
   return out;
 }
 
@@ -2130,12 +2194,16 @@ export async function reconcile(
   );
   const live = new Set<number>(liveIds);
 
-  // 2. Upsert missing or non-terminal streams.
+  // 2. Refresh every live stream Mongo is missing or that can still change.
+  // `is_depleted` is the only terminal state: cancelling does NOT end a stream
+  // — withdrawing stays legal until the balance is drained — so a
+  // canceled-but-not-depleted doc keeps moving (`withdrawn`, and `recipient`
+  // via `withdraw_max_and_transfer`). Only a depleted doc is frozen for good.
   const heads = await store.listStreamHeads();
   const known = new Map(heads.map((h) => [h._id, h]));
   const toFetch = [...live].filter((id) => {
     const h = known.get(id);
-    return !h || (!h.was_canceled && !h.is_depleted);
+    return !h || !h.is_depleted;
   });
   const upsertFromChain = async (id: number, s: StreamChain) => {
     const fields = mapStream(s);
@@ -2145,13 +2213,14 @@ export async function reconcile(
       { created_at: fields.start_ts ?? now },
     );
   };
-  const results = await mapLimit(toFetch, opts.concurrency, async (id) => {
+  const fetched = await mapLimit(toFetch, opts.concurrency, async (id): Promise<Verdict> => {
     const s = await chain.getStream(id);
-    if (!s) return false;
+    // Enumerated moments ago but already gone: a burn landed mid-pass. Nothing
+    // to write — the `burned` event, or the next pass's step 3, depletes it.
+    if (!s) return 'skipped';
     await upsertFromChain(id, s);
-    return true;
+    return 'upserted';
   });
-  let upserted = results.filter(Boolean).length;
 
   // 3. Streams we know that the enumeration no longer lists look burned — but
   // `total_supply` + `get_token_id` is not an atomic snapshot: a burn landing
@@ -2161,19 +2230,22 @@ export async function reconcile(
   // with `get_stream` before writing it off: a record that still exists means
   // the enumeration raced, and the stream is refreshed like any other live one.
   const suspects = heads.filter((h) => !live.has(h._id) && !h.is_depleted);
-  const verdicts = await mapLimit(suspects, opts.concurrency, async (h) => {
+  const verified = await mapLimit(suspects, opts.concurrency, async (h): Promise<Verdict> => {
     const s = await chain.getStream(h._id);
     if (!s) {
       await store.markDepleted(h._id, now);
-      return 'depleted' as const;
+      return 'depleted';
     }
     await upsertFromChain(h._id, s);
-    return 'upserted' as const;
+    return 'upserted';
   });
-  const depleted = verdicts.filter((v) => v === 'depleted').length;
-  upserted += verdicts.length - depleted;
 
-  const result = { live: live.size, upserted, depleted };
+  const verdicts = [...fetched, ...verified];
+  const result = {
+    live: live.size,
+    upserted: verdicts.filter((v) => v === 'upserted').length,
+    depleted: verdicts.filter((v) => v === 'depleted').length,
+  };
   await store.saveReconcileMeta({ at: now, ...result });
   return result;
 }
