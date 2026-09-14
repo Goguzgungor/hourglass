@@ -3,8 +3,10 @@
 // Returns aggregate stats over the indexed streams. Used by the dashboard's
 // header strip ("12 streams · 1,250 XLM locked · 4 in flight").
 
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { streamsCollection } from '@/lib/db';
+import { optAddress, ParamError } from '@/lib/api/params';
+import { walletStats } from '@/lib/api/walletStats';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +20,27 @@ export interface StatsResponse {
   locked: string;
 }
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const sp = new URL(req.url).searchParams;
+  let address: string | undefined;
+  try {
+    address = optAddress(sp, 'address', 'G');
+  } catch (err) {
+    if (err instanceof ParamError) return NextResponse.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
+  if (address) {
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      const col = await streamsCollection();
+      const docs = await col.find({ $or: [{ sender: address }, { recipient: address }] }).toArray();
+      return NextResponse.json(walletStats(address, docs, now));
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err);
+      return NextResponse.json({ error: `db unreachable: ${msg}` }, { status: 503 });
+    }
+  }
+
   try {
     const col = await streamsCollection();
     // Fetch only the fields we need to compute the aggregate; for a few
