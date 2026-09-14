@@ -1,6 +1,6 @@
 import { Keypair, nativeToScVal, xdr, type rpc } from '@stellar/stellar-sdk';
 import { describe, expect, it } from 'vitest';
-import { parseEvent } from './events';
+import { eventOrdinal, parseEvent } from './events';
 
 const addr = Keypair.random().publicKey();
 const sym = (s: string) => nativeToScVal(s, { type: 'symbol' });
@@ -43,5 +43,28 @@ describe('parseEvent', () => {
   });
   it('rejects a non-integer stream id', () => {
     expect(parseEvent(ev([sym('stream'), sym('renounced'), sym('nope')], nativeToScVal(0, { type: 'u32' })))).toBeNull();
+  });
+  it('distinguishes events emitted by one operation', () => {
+    const value = xdr.ScVal.scvVec([
+      nativeToScVal(1_000n, { type: 'i128' }),
+      nativeToScVal(addr, { type: 'address' }),
+    ]);
+    const topics = [sym('stream'), sym('withdrawn'), nativeToScVal(7, { type: 'u32' }), nativeToScVal(addr, { type: 'address' })];
+    const a = parseEvent(ev(topics, value, { transactionIndex: 3, operationIndex: 0, id: '0020082446737342463-0000000002' }));
+    const b = parseEvent(ev(topics, value, { transactionIndex: 3, operationIndex: 0, id: '0020082446737342463-0000000004' }));
+    expect(a!.log_index).toBe(3_000_002);
+    expect(b!.log_index).toBe(3_000_004);
+    expect(a!.log_index).toBeLessThan(b!.log_index);
+  });
+});
+
+describe('eventOrdinal', () => {
+  it('parses the ordinal suffix from an RPC event id', () => {
+    expect(eventOrdinal('0020082446737342463-0000000002')).toBe(2);
+  });
+  it('returns null when there is no parsable suffix', () => {
+    expect(eventOrdinal('0001')).toBeNull();
+    expect(eventOrdinal(undefined)).toBeNull();
+    expect(eventOrdinal('x-abc')).toBeNull();
   });
 });

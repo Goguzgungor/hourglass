@@ -13,12 +13,26 @@ export interface ParsedEvent {
   data: unknown;
   ledger: number;
   tx_hash: string;
-  // (tx_hash, log_index) is our idempotency key. The RPC returns events with
-  // a globally unique `id` string and per-tx (transactionIndex, operationIndex)
-  // — we combine the latter into a single integer so it remains stable across
-  // re-fetches of the same page.
+  // (tx_hash, log_index) is our idempotency key. We derive it from
+  // transactionIndex (transaction order within the ledger) and the event's
+  // ordinal inside the ledger, parsed from the RPC `id` suffix — this stays
+  // unique even when a single operation emits several events for the same
+  // action (e.g. `create_batch`). Falls back to operationIndex when the id
+  // has no parsable ordinal, which is only unique per operation.
   log_index: number;
   ts: number;
+}
+
+/**
+ * Per-event ordinal from the RPC event id (`<toid>-<%010d>`). Returns null
+ * when the id has no parsable suffix (older RPCs / synthetic test events).
+ */
+export function eventOrdinal(id: string | undefined): number | null {
+  if (!id) return null;
+  const dash = id.lastIndexOf('-');
+  if (dash < 0) return null;
+  const n = Number.parseInt(id.slice(dash + 1), 10);
+  return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 const KNOWN_ACTIONS: ReadonlySet<string> = new Set([
@@ -62,11 +76,14 @@ export function parseEvent(e: rpc.Api.EventResponse): ParsedEvent | null {
     ? Math.floor(closedAt / 1000)
     : Math.floor(Date.now() / 1000);
 
-  // Encode (transactionIndex, operationIndex) into a single int so the unique
-  // (tx_hash, log_index) compound index is stable across re-fetches.
+  // Idempotency key, unique per event and monotonic within a ledger:
+  // transaction order first, then the event's ordinal inside the ledger
+  // (from the RPC id suffix). Falls back to the operation index for events
+  // without a parsable id, which is only unique per operation.
   const txIdx = Number(e.transactionIndex ?? 0);
   const opIdx = Number(e.operationIndex ?? 0);
-  const logIndex = txIdx * 1_000_000 + opIdx;
+  const ordinal = eventOrdinal(e.id);
+  const logIndex = txIdx * 1_000_000 + (ordinal ?? opIdx);
 
   return {
     action: action as ActionName,

@@ -150,4 +150,12 @@ describe('handleEvent', () => {
     await handleEvent(parsed({}), { chain, store, contractId: 'CLOCKUP', now });
     expect(store.actions).toHaveLength(1);
   });
+  it('records every created action of a batch transaction', async () => {
+    const chain = new FakeChain(new Map([[1, chainStream()], [2, chainStream()]]));
+    const store = new MemoryIndexerStore();
+    await handleEvent(parsed({ streamId: 1, tx_hash: 'hb', log_index: 1_000_002 }), { chain, store, contractId: 'CLOCKUP', now });
+    await handleEvent(parsed({ streamId: 2, tx_hash: 'hb', log_index: 1_000_004 }), { chain, store, contractId: 'CLOCKUP', now });
+    expect(store.actions).toHaveLength(2);
+    expect(store.actions.map((a) => a.stream_id).sort()).toEqual([1, 2]);
+  });
 });
