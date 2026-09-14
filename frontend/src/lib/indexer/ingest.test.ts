@@ -112,6 +112,15 @@ describe('handleEvent', () => {
     expect(store.actions).toHaveLength(1);
     expect(store.actions[0]).toMatchObject({ action: 'created', actor: 'GSENDER', participants: ['GSENDER', 'GRECIP'] });
   });
+  it('created: overwrites provenance a reconcile-first insert guessed', async () => {
+    const chain = new FakeChain(new Map([[1, chainStream()]]));
+    const store = new MemoryIndexerStore();
+    // Reconcile saw the stream before the event did: created_at is the start_ts
+    // guess and there is no tx/ledger. The `created` event is authoritative.
+    store.streams.set(1, { _id: 1, sender: 'GSENDER', recipient: 'GRECIP', source: 'reconcile', created_at: 1_000, was_canceled: false, is_depleted: false } as never);
+    await handleEvent(parsed({}), { chain, store, contractId: 'CLOCKUP', now });
+    expect(store.streams.get(1)).toMatchObject({ created_tx: 'h1', created_ledger: 100, created_at: 1_500, source: 'event' });
+  });
   it('withdrawn: refreshes the stream and records amount/actor/to', async () => {
     const chain = new FakeChain(new Map([[1, chainStream({ withdrawn: 250n })]]));
     const store = new MemoryIndexerStore();

@@ -26,6 +26,35 @@ describe('reconcile', () => {
     expect(chain.calls.getStream).toBe(3);
     expect(store.reconcileMeta).toMatchObject({ at: 5_000, live: 3, upserted: 2, depleted: 1 });
   });
+  it('refreshes canceled-but-not-depleted streams', async () => {
+    // Cancelling does not end a stream: withdrawing stays legal until the
+    // balance is drained, so the doc keeps changing after `was_canceled`.
+    const chain = new FakeChain(new Map([[1, chainStream({ was_canceled: true, withdrawn: 5n })]]));
+    const store = new MemoryIndexerStore();
+    store.streams.set(1, { _id: 1, was_canceled: true, is_depleted: false, withdrawn: '0' } as never);
+    const r = await reconcile(chain, store, opts);
+    expect(store.streams.get(1)!.withdrawn).toBe('5');
+    expect(store.streams.get(1)!.is_depleted).toBe(false);
+    expect(r.upserted).toBe(1);
+  });
+  it('treats a non-finite concurrency as 1 instead of spawning zero workers', async () => {
+    const chain = new FakeChain(new Map([
+      [1, chainStream({ withdrawn: 10n })],
+      [2, chainStream({ was_canceled: true, is_depleted: true })],
+      [4, chainStream()],
+    ]));
+    const store = new MemoryIndexerStore();
+    store.streams.set(1, { _id: 1, was_canceled: false, is_depleted: false, withdrawn: '0' } as never);
+    store.streams.set(2, { _id: 2, was_canceled: true, is_depleted: true } as never);
+    store.streams.set(3, { _id: 3, was_canceled: false, is_depleted: false } as never);
+
+    const r = await reconcile(chain, store, { ...opts, concurrency: NaN });
+    expect(r).toEqual({ live: 3, upserted: 2, depleted: 1 });
+    expect(store.streams.get(1)!.withdrawn).toBe('10');
+    expect(store.streams.get(4)).toMatchObject({ _id: 4, source: 'reconcile' });
+    expect(store.streams.get(3)!.is_depleted).toBe(true);
+    expect(chain.calls.getStream).toBe(3);
+  });
   it('does nothing on an empty chain and empty store', async () => {
     const r = await reconcile(new FakeChain(new Map()), new MemoryIndexerStore(), opts);
     expect(r).toEqual({ live: 0, upserted: 0, depleted: 0 });
@@ -51,6 +80,10 @@ describe('reconcile', () => {
     const store = new MemoryIndexerStore();
     store.streams.set(1, { _id: 1, created_tx: 'h1', created_ledger: 9, created_at: 900, was_canceled: false, is_depleted: false } as never);
     await reconcile(chain, store, opts);
-    expect(store.streams.get(1)).toMatchObject({ created_tx: 'h1', created_ledger: 9, created_at: 900 });
+    // `source`/`updated_at` prove the doc really was refreshed, so the surviving
+    // provenance is not just an untouched doc.
+    expect(store.streams.get(1)).toMatchObject({
+      created_tx: 'h1', created_ledger: 9, created_at: 900, source: 'reconcile', updated_at: 5_000,
+    });
   });
 });

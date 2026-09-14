@@ -134,7 +134,11 @@ export async function handleEvent(
   switch (p.action) {
     case 'created': {
       action.actor = String(p.topics[3] ?? '');
-      await refresh({}, { created_ledger: p.ledger, created_tx: p.tx_hash, created_at: p.ts });
+      // Provenance goes in `$set`, not `$setOnInsert`: a reconcile pass may have
+      // inserted this doc first (with `created_at` = `start_ts` and no tx), and
+      // `$setOnInsert` would then never land. A stream has exactly one `created`
+      // event, so these three fields are authoritative wherever they arrive.
+      await refresh({ created_ledger: p.ledger, created_tx: p.tx_hash, created_at: p.ts });
       break;
     }
     case 'withdrawn': {

@@ -11,21 +11,39 @@ export interface ReconcileOptions {
 }
 
 export interface ReconcileResult {
+  /**
+   * Size of the deduped enumerated id set; may be below `total_supply` during a
+   * race — a burn mid-scan shifts the remaining indices, so an id can be missed
+   * (step 3 verifies those) or enumerated twice (the `Set` collapses them).
+   */
   live: number;
   upserted: number;
   depleted: number;
 }
 
+/** What one stream's pass actually did, so totals are counted and never inferred. */
+type Verdict = 'upserted' | 'depleted' | 'skipped';
+
+/**
+ * Run `fn` over `items` with at most `limit` calls in flight, preserving order.
+ * One rejected call rejects the whole pass; sibling workers already in flight
+ * are NOT cancelled and their writes stand. That is safe here because every
+ * write is an idempotent upsert — the next pass redoes them.
+ */
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+  // A non-finite or sub-1 `limit` (NaN from a bad env var, 0, -1) must never
+  // spawn zero workers: that resolves immediately with a sparse array of
+  // `undefined`s, which callers would read as work successfully done.
+  const workers = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 1;
+  const pool = Array.from({ length: Math.max(1, Math.min(workers, items.length)) }, async () => {
     while (next < items.length) {
       const i = next++;
       out[i] = await fn(items[i]);
     }
   });
-  await Promise.all(workers);
+  await Promise.all(pool);
   return out;
 }
 
@@ -45,12 +63,16 @@ export async function reconcile(
   );
   const live = new Set<number>(liveIds);
 
-  // 2. Upsert missing or non-terminal streams.
+  // 2. Refresh every live stream Mongo is missing or that can still change.
+  // `is_depleted` is the only terminal state: cancelling does NOT end a stream
+  // — withdrawing stays legal until the balance is drained — so a
+  // canceled-but-not-depleted doc keeps moving (`withdrawn`, and `recipient`
+  // via `withdraw_max_and_transfer`). Only a depleted doc is frozen for good.
   const heads = await store.listStreamHeads();
   const known = new Map(heads.map((h) => [h._id, h]));
   const toFetch = [...live].filter((id) => {
     const h = known.get(id);
-    return !h || (!h.was_canceled && !h.is_depleted);
+    return !h || !h.is_depleted;
   });
   const upsertFromChain = async (id: number, s: StreamChain) => {
     const fields = mapStream(s);
@@ -60,13 +82,14 @@ export async function reconcile(
       { created_at: fields.start_ts ?? now },
     );
   };
-  const results = await mapLimit(toFetch, opts.concurrency, async (id) => {
+  const fetched = await mapLimit(toFetch, opts.concurrency, async (id): Promise<Verdict> => {
     const s = await chain.getStream(id);
-    if (!s) return false;
+    // Enumerated moments ago but already gone: a burn landed mid-pass. Nothing
+    // to write — the `burned` event, or the next pass's step 3, depletes it.
+    if (!s) return 'skipped';
     await upsertFromChain(id, s);
-    return true;
+    return 'upserted';
   });
-  let upserted = results.filter(Boolean).length;
 
   // 3. Streams we know that the enumeration no longer lists look burned — but
   // `total_supply` + `get_token_id` is not an atomic snapshot: a burn landing
@@ -76,19 +99,22 @@ export async function reconcile(
   // with `get_stream` before writing it off: a record that still exists means
   // the enumeration raced, and the stream is refreshed like any other live one.
   const suspects = heads.filter((h) => !live.has(h._id) && !h.is_depleted);
-  const verdicts = await mapLimit(suspects, opts.concurrency, async (h) => {
+  const verified = await mapLimit(suspects, opts.concurrency, async (h): Promise<Verdict> => {
     const s = await chain.getStream(h._id);
     if (!s) {
       await store.markDepleted(h._id, now);
-      return 'depleted' as const;
+      return 'depleted';
     }
     await upsertFromChain(h._id, s);
-    return 'upserted' as const;
+    return 'upserted';
   });
-  const depleted = verdicts.filter((v) => v === 'depleted').length;
-  upserted += verdicts.length - depleted;
 
-  const result = { live: live.size, upserted, depleted };
+  const verdicts = [...fetched, ...verified];
+  const result = {
+    live: live.size,
+    upserted: verdicts.filter((v) => v === 'upserted').length,
+    depleted: verdicts.filter((v) => v === 'depleted').length,
+  };
   await store.saveReconcileMeta({ at: now, ...result });
   return result;
 }
