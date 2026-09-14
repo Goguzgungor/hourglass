@@ -1452,7 +1452,7 @@ describe('parseEvent', () => {
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { mapStream } from './chain';
+import { makeChainReaderFromClient, mapStream, type ViewClient } from './chain';
 import { chainStream } from './testing';
 
 describe('mapStream', () => {
@@ -1467,6 +1467,39 @@ describe('mapStream', () => {
   it('maps Recurring fields', () => {
     const d = mapStream(chainStream({ shape: { tag: 'Recurring', values: [{ first_ts: 1_000, period_secs: 60, count: 3, amount_per_period: 10n }] } }));
     expect(d).toMatchObject({ model: 'Recurring', first_ts: 1_000, period_secs: 60, count: 3, amount_per_period: '10' });
+  });
+});
+
+function fakeClient(over: Partial<ViewClient> = {}): ViewClient {
+  return {
+    async get_stream() { return { result: undefined }; },
+    async total_supply() { return { result: 3 }; },
+    async get_token_id({ index }) { return { result: index + 10 }; },
+    ...over,
+  };
+}
+
+describe('makeChainReaderFromClient', () => {
+  it('returns null when the contract reports StreamNotFound (#30)', async () => {
+    const r = makeChainReaderFromClient(fakeClient({
+      async get_stream() { throw new Error('HostError: Error(Contract, #30)'); },
+    }));
+    expect(await r.getStream(9)).toBeNull();
+  });
+  it('returns null when the result is empty', async () => {
+    const r = makeChainReaderFromClient(fakeClient());
+    expect(await r.getStream(9)).toBeNull();
+  });
+  it('rethrows non-contract failures', async () => {
+    const r = makeChainReaderFromClient(fakeClient({
+      async get_stream() { throw new Error('fetch failed: 404 Not Found'); },
+    }));
+    await expect(r.getStream(9)).rejects.toThrow('fetch failed');
+  });
+  it('maps total_supply and get_token_id results to numbers', async () => {
+    const r = makeChainReaderFromClient(fakeClient());
+    expect(await r.totalSupply()).toBe(3);
+    expect(await r.getTokenId(2)).toBe(12);
   });
 });
 ```
@@ -1550,25 +1583,23 @@ export function mapStream(s: StreamChain): Partial<StreamDoc> {
   };
 }
 
-type ViewClient = {
+export type ViewClient = {
   get_stream(a: { stream_id: number }): Promise<{ result: unknown }>;
   total_supply(): Promise<{ result: unknown }>;
   get_token_id(a: { index: number }): Promise<{ result: unknown }>;
 };
 
+// Contract errors surface from the SDK as `Error(Contract, #30)` — that's the
+// only reliable signal that the stream record does not exist. A generic
+// "not found" substring would also match transient RPC/HTTP failures (e.g. a
+// proxy's "404 Not Found" body), which must rethrow instead of being treated
+// as a missing stream.
 function isNotFound(err: unknown): boolean {
   const msg = (err as Error)?.message ?? String(err);
-  return msg.includes('StreamNotFound') || msg.includes('#30') || msg.toLowerCase().includes('not found');
+  return msg.includes('StreamNotFound') || msg.includes('#30');
 }
 
-export function makeChainReader(d: { lockup: string; networkPassphrase: string; rpcUrl: string; deployer: string }): ChainReader {
-  const client = new lockupSdk.Client({
-    contractId: d.lockup,
-    networkPassphrase: d.networkPassphrase,
-    rpcUrl: d.rpcUrl,
-    publicKey: d.deployer,
-    allowHttp: d.rpcUrl.startsWith('http://'),
-  }) as unknown as ViewClient;
+export function makeChainReaderFromClient(client: ViewClient): ChainReader {
   return {
     async getStream(id) {
       try {
@@ -1587,6 +1618,17 @@ export function makeChainReader(d: { lockup: string; networkPassphrase: string; 
       return Number((await client.get_token_id({ index })).result);
     },
   };
+}
+
+export function makeChainReader(d: { lockup: string; networkPassphrase: string; rpcUrl: string; deployer: string }): ChainReader {
+  const client = new lockupSdk.Client({
+    contractId: d.lockup,
+    networkPassphrase: d.networkPassphrase,
+    rpcUrl: d.rpcUrl,
+    publicKey: d.deployer,
+    allowHttp: d.rpcUrl.startsWith('http://'),
+  }) as unknown as ViewClient;
+  return makeChainReaderFromClient(client);
 }
 ```
 
