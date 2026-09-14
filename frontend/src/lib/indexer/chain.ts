@@ -75,10 +75,16 @@ export type ViewClient = {
 // only reliable signal that the stream record does not exist. A generic
 // "not found" substring would also match transient RPC/HTTP failures (e.g. a
 // proxy's "404 Not Found" body), which must rethrow instead of being treated
-// as a missing stream.
+// as a missing stream. The match is anchored on the full `Error(Contract, #30)`
+// form so a different error number that merely starts with 30 (#300, #3000)
+// does not read as StreamNotFound.
+//
+// With stellar-sdk 15 a mapped contract error may instead come back as a
+// returned `Err` object rather than a throw; `getStream`'s `s.sender` check
+// catches that path (no record, no sender → null).
 function isNotFound(err: unknown): boolean {
   const msg = (err as Error)?.message ?? String(err);
-  return msg.includes('StreamNotFound') || msg.includes('#30');
+  return msg.includes('StreamNotFound') || /Error\(Contract, #30\)/.test(msg);
 }
 
 export function makeChainReaderFromClient(client: ViewClient): ChainReader {

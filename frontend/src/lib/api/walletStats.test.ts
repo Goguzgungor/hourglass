@@ -28,4 +28,22 @@ describe('walletStats', () => {
     const usd = s.by_token.find((t) => t.token === 'CUSD')!;
     expect(usd).toEqual({ token: 'CUSD', sent_deposited: '500', sent_locked: '0', received_withdrawn: '0', received_withdrawable_now: '0' });
   });
+  it('clamps sent_locked when withdrawn + refunded overshoot deposited', () => {
+    const s = walletStats(ME, [doc({ sender: ME, deposited: '1000', withdrawn: '800', refunded: '400' })], 1_500);
+    expect(s.by_token[0].sent_locked).toBe('0');
+  });
+  it('counts no locked amount for a depleted stream with a stale withdrawn', () => {
+    const s = walletStats(ME, [doc({ sender: ME, deposited: '1000', withdrawn: '0', refunded: '0', is_depleted: true })], 1_500);
+    expect(s.by_token[0]).toMatchObject({ sent_deposited: '1000', sent_locked: '0' });
+  });
+  it('is exact past 2^53', () => {
+    const big = '100000000000000000000'; // 1e20
+    const s = walletStats(ME, [doc({ sender: ME, recipient: ME, deposited: big, withdrawn: '0', refunded: '0' })], 1_500);
+    expect(s.by_token[0]).toMatchObject({
+      sent_deposited: big,
+      sent_locked: big,
+      // linear 1000→2000, half elapsed at 1500
+      received_withdrawable_now: '50000000000000000000',
+    });
+  });
 });

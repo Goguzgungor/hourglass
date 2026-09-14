@@ -153,5 +153,9 @@ export function nextStreamsCursor(
   last: Pick<StreamDoc, '_id' | SortField>,
   sortField: SortField,
 ): string {
-  return encodeCursor({ k: last[sortField], id: last._id });
+  // `?? 0` for a legacy doc written before the sort field existed: without it
+  // the cursor would carry `undefined`, encode as malformed, and be rejected
+  // on the next page (the runner backfills `created_at`, but a page served
+  // mid-migration must still paginate).
+  return encodeCursor({ k: last[sortField] ?? 0, id: last._id });
 }

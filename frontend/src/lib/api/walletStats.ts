@@ -34,8 +34,14 @@ export function walletStats(address: string, streams: StreamDoc[], now: number):
     if (s.sender === address) {
       sending++;
       t.sd += BigInt(s.deposited);
-      const locked = BigInt(s.deposited) - BigInt(s.withdrawn) - BigInt(s.refunded);
-      if (locked > 0n) t.sl += locked;
+      // A depleted stream holds nothing, whatever its (possibly stale) amounts
+      // say; otherwise the clamp guards against `withdrawn + refunded`
+      // overshooting `deposited` — which the on-chain withdraw-after-cancel gap
+      // can actually produce (see `withdrawableNow`).
+      if (!s.is_depleted) {
+        const locked = BigInt(s.deposited) - BigInt(s.withdrawn) - BigInt(s.refunded);
+        if (locked > 0n) t.sl += locked;
+      }
     }
     if (s.recipient === address) {
       receiving++;

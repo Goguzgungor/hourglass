@@ -1,6 +1,6 @@
-import type { rpc } from '@stellar/stellar-sdk';
+import { Keypair, nativeToScVal, xdr, type rpc } from '@stellar/stellar-sdk';
 import { describe, expect, it } from 'vitest';
-import type { ParsedEvent } from './events';
+import { parseEvent, type ParsedEvent } from './events';
 import { fetchAndIngest, handleEvent, participantsFor } from './ingest';
 import { chainStream, FakeChain, MemoryIndexerStore } from './testing';
 
@@ -197,6 +197,36 @@ describe('handleEvent', () => {
     await handleEvent(parsed({}), { chain, store, contractId: 'CLOCKUP', now });
     await handleEvent(parsed({}), { chain, store, contractId: 'CLOCKUP', now });
     expect(store.actions).toHaveLength(1);
+  });
+  it('keeps both created events of one batch tx when they arrive as real RPC events', async () => {
+    // End to end over the real decoder: two `created` events emitted by a
+    // single `create_batch` invocation share (txHash, operationIndex) and are
+    // told apart only by the RPC id ordinal.
+    const sender = Keypair.random().publicKey();
+    const sym = (s: string) => nativeToScVal(s, { type: 'symbol' });
+    const createdEvent = (streamId: number, id: string): rpc.Api.EventResponse => ({
+      id,
+      type: 'contract',
+      ledger: 4_671_200,
+      ledgerClosedAt: '2026-09-14T10:15:00Z',
+      contractId: undefined,
+      topic: [sym('stream'), sym('created'), nativeToScVal(streamId, { type: 'u32' }), nativeToScVal(sender, { type: 'address' })] as xdr.ScVal[],
+      value: nativeToScVal(0, { type: 'u32' }),
+      txHash: 'cd'.repeat(32),
+      transactionIndex: 3,
+      operationIndex: 0,
+      inSuccessfulContractCall: true,
+    } as unknown as rpc.Api.EventResponse);
+
+    const chain = new FakeChain(new Map([[1, chainStream()], [2, chainStream()]]));
+    const store = new MemoryIndexerStore();
+    for (const [streamId, id] of [[1, '0020082446737342463-0000000002'], [2, '0020082446737342463-0000000004']] as const) {
+      const p = parseEvent(createdEvent(streamId, id));
+      expect(p).not.toBeNull();
+      await handleEvent(p!, { chain, store, contractId: 'CLOCKUP', now });
+    }
+    expect(store.actions).toHaveLength(2);
+    expect(store.actions.map((a) => a.log_index)).toEqual([3_000_002, 3_000_004]);
   });
   it('records every created action of a batch transaction', async () => {
     const chain = new FakeChain(new Map([[1, chainStream()], [2, chainStream()]]));

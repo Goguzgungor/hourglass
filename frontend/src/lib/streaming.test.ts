@@ -80,6 +80,11 @@ describe('streamedAmount — Linear', () => {
   it('treats cliff == start as no cliff', () => {
     expect(streamedAmount(linear({ cliff_ts: 1_000, end_ts: 3_000 }), 2_000)).toBe(500_000n);
   });
+  it('is exact past 2^53 (bigint math, no float rounding)', () => {
+    // 1e20 deposited, midpoint of the cliff→end span: exactly half.
+    expect(streamedAmount(linear({ deposited: '100000000000000000000' }), 3_000))
+      .toBe(50_000_000_000_000_000_000n);
+  });
   it('floors the division', () => {
     // base 1e6 over span 2000; at elapsed 1 → 500 exactly, at elapsed 3 → 1500
     expect(streamedAmount(linear(), 2_001)).toBe(500n);
@@ -120,6 +125,11 @@ describe('streamedAmount — Recurring', () => {
     expect(streamedAmount(recurring(1), 1_000)).toBe(1_000n);
     expect(streamedAmount(recurring(1), 2_000)).toBe(1_000n);
   });
+  it('a recurring stream with period_secs 0 streams nothing', () => {
+    // math.rs refuses to create this (Err(InvalidPeriod)); the read layer has
+    // no error channel, so it reports 0 rather than dividing by zero.
+    expect(streamedAmount({ ...recurring(), period_secs: 0 }, 99_999)).toBe(0n);
+  });
   it('is monotonic', () => {
     let prev = 0n;
     for (let t = 0; t < 3_000; t += 7) {
@@ -134,6 +144,16 @@ describe('withdrawableNow', () => {
   it('subtracts withdrawn and never goes negative', () => {
     expect(withdrawableNow(linear({ withdrawn: '200000' }), 3_000)).toBe(300_000n);
     expect(withdrawableNow(linear({ withdrawn: '999999' }), 1_500)).toBe(0n);
+  });
+  it('caps at deposited - refunded after a cancel', () => {
+    // Canceled at 60%: 400000 went back to the sender, so the stream holds
+    // 600000 — never the full deposit, even long after end_ts.
+    const t = linear({ was_canceled: true, refunded: '400000', withdrawn: '0' });
+    expect(streamedAmount(t, 4_001)).toBe(1_000_000n);
+    expect(withdrawableNow(t, 4_001)).toBe(600_000n);
+  });
+  it('is zero for a depleted stream even with a stale withdrawn', () => {
+    expect(withdrawableNow(linear({ is_depleted: true, withdrawn: '0' }), 4_001)).toBe(0n);
   });
 });
 

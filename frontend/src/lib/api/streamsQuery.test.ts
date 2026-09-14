@@ -120,4 +120,11 @@ describe('sort, order, limit, cursor', () => {
       $or: [{ created_at: { $lt: 5 } }, { created_at: 5, _id: { $lt: 9 } }],
     });
   });
+  it('nextStreamsCursor stays decodable for a legacy doc with no created_at', () => {
+    const legacy = { _id: 9, start_ts: 1, end_ts: 2 } as unknown as Parameters<typeof nextStreamsCursor>[0];
+    const c = nextStreamsCursor(legacy, 'created_at');
+    expect(buildStreamsQuery(new URLSearchParams(`cursor=${c}`), NOW).filter).toEqual({
+      $or: [{ created_at: { $lt: 0 } }, { created_at: 0, _id: { $lt: 9 } }],
+    });
+  });
 });

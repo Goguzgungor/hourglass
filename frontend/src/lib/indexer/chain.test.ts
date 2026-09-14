@@ -37,6 +37,12 @@ describe('makeChainReaderFromClient', () => {
     const r = makeChainReaderFromClient(fakeClient());
     expect(await r.getStream(9)).toBeNull();
   });
+  it('rethrows a different contract error whose number starts with 30', async () => {
+    const r = makeChainReaderFromClient(fakeClient({
+      async get_stream() { throw new Error('HostError: Error(Contract, #300)'); },
+    }));
+    await expect(r.getStream(9)).rejects.toThrow('#300');
+  });
   it('rethrows non-contract failures', async () => {
     const r = makeChainReaderFromClient(fakeClient({
       async get_stream() { throw new Error('fetch failed: 404 Not Found'); },

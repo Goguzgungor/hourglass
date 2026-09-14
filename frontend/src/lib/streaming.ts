@@ -61,6 +61,11 @@ export function streamedAmount(t: StreamTerms, now: number): bigint {
       return acc;
     }
     case 'Recurring': {
+      // Deliberate divergence from math.rs: the contract rejects a
+      // non-positive `period_secs` up front with `Err(InvalidPeriod)`, so such
+      // a stream can never exist on chain. This read layer cannot throw at a
+      // caller asking about a materialized doc, so it reports 0 streamed for
+      // a (corrupt or hand-written) doc with `period_secs <= 0` instead.
       const first = t.first_ts ?? t.start_ts;
       const period = t.period_secs ?? 0;
       const count = t.count ?? 0;
@@ -72,9 +77,26 @@ export function streamedAmount(t: StreamTerms, now: number): bigint {
   }
 }
 
-/** `max(0, streamed(now) - withdrawn)`. */
+/**
+ * `max(0, min(streamed(now), deposited - refunded) - withdrawn)`, and `0` once
+ * the stream is depleted.
+ *
+ * The `deposited - refunded` cap is a deliberate divergence from the contract:
+ * `withdrawable_amount` in contracts/shared/src/math.rs still computes
+ * `streamed(now) - withdrawn` after a `cancel`, so on chain a canceled
+ * recipient can be quoted — and paid, out of the contract's pooled token
+ * balance — more than the stream's own remaining balance. That is ticketed as
+ * a contract follow-up (see docs/superpowers/plans/2026-09-14-lockup-v0.2-
+ * followups.md); until it ships the API must never advertise more than the
+ * stream actually holds. A depleted stream holds nothing, whatever a stale
+ * `withdrawn` says.
+ */
 export function withdrawableNow(t: StreamTerms, now: number): bigint {
-  const w = streamedAmount(t, now) - big(t.withdrawn);
+  if (t.is_depleted) return 0n;
+  const remaining = big(t.deposited) - big(t.refunded);
+  const streamed = streamedAmount(t, now);
+  const capped = streamed < remaining ? streamed : remaining;
+  const w = capped - big(t.withdrawn);
   return w > 0n ? w : 0n;
 }
 
