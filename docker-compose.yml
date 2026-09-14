@@ -27,6 +27,8 @@ services:
       MONGODB_URL: mongodb://mongodb:27017
       MONGODB_DB: hourglass_v3
       INDEXER_POLL_MS: "5000"
+      INDEXER_RECONCILE_MS: "600000"
+      INDEXER_MAX_PAGES: "20"
     depends_on:
       - mongodb
     command: npm run indexer
