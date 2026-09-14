@@ -1126,10 +1126,31 @@ export interface StreamHead {
   is_depleted: boolean;
 }
 
+export interface ActionKey {
+  ts: number;
+  log_index: number;
+}
+
+export interface TransferRef {
+  ts: number;
+  log_index: number;
+  actor?: string;
+  new_owner?: string;
+}
+
+/** Recipient of a stream at the moment of `key`, reconstructed from its transfer history. */
+export function recipientAt(key: ActionKey, transfersAsc: TransferRef[], current: string): string {
+  for (const t of transfersAsc) {
+    if (t.ts > key.ts || (t.ts === key.ts && t.log_index > key.log_index)) return t.actor ?? current;
+  }
+  return current;
+}
+
 export interface IndexerStore {
   loadCursorState(): Promise<CursorState | null>;
   saveCursorState(s: CursorState): Promise<void>;
   getStream(id: number): Promise<StreamDoc | null>;
+  /** Keys present in `set` take precedence; overlapping keys are dropped from `setOnInsert`. */
   upsertStream(id: number, set: Partial<StreamDoc>, setOnInsert?: Partial<StreamDoc>): Promise<void>;
   markDepleted(id: number, now: number): Promise<void>;
   /** Idempotent: duplicate (tx_hash, log_index) is silently ignored. */
@@ -1163,7 +1184,12 @@ export class MongoIndexerStore implements IndexerStore {
   async upsertStream(id: number, set: Partial<StreamDoc>, setOnInsert?: Partial<StreamDoc>): Promise<void> {
     const streams = await streamsCollection();
     const update: Record<string, unknown> = { $set: set };
-    if (setOnInsert && Object.keys(setOnInsert).length > 0) update.$setOnInsert = setOnInsert;
+    // Mongo rejects an update where the same field path appears in both
+    // $set and $setOnInsert, so drop any keys already present in `set`.
+    const onInsert = Object.fromEntries(
+      Object.entries(setOnInsert ?? {}).filter(([k]) => !(k in set)),
+    );
+    if (Object.keys(onInsert).length > 0) update.$setOnInsert = onInsert;
     await streams.updateOne({ _id: id }, update, { upsert: true });
   }
 
@@ -1195,17 +1221,44 @@ export class MongoIndexerStore implements IndexerStore {
 
   /**
    * One-time migration: fill `participants` on actions written before the
-   * field existed. Returns the number of actions updated.
+   * field existed. The recipient is reconstructed at the action's own
+   * (ts, log_index) from the stream's transfer history — using the stream
+   * doc's CURRENT recipient would misattribute pre-transfer actions to a
+   * later owner. Returns the number of actions updated.
    */
   async backfillParticipants(): Promise<number> {
     const actions = await actionsCollection();
     const streams = await streamsCollection();
     const missing = await actions.find({ participants: { $exists: false } }).toArray();
+    if (missing.length === 0) return 0;
+
+    const streamIds = [...new Set(missing.map((a) => a.stream_id))];
+
+    const streamDocs = await streams
+      .find({ _id: { $in: streamIds } }, { projection: { sender: 1, recipient: 1 } })
+      .toArray();
+    const streamById = new Map(streamDocs.map((s) => [s._id, { sender: s.sender, recipient: s.recipient }]));
+
+    const transferDocs = await actions
+      .find({ stream_id: { $in: streamIds }, action: 'transferred' })
+      .sort({ ts: 1, log_index: 1 })
+      .toArray();
+    const transfersByStream = new Map<number, TransferRef[]>();
+    for (const t of transferDocs) {
+      const list = transfersByStream.get(t.stream_id) ?? [];
+      list.push({ ts: t.ts, log_index: t.log_index, actor: t.actor, new_owner: t.new_owner });
+      transfersByStream.set(t.stream_id, list);
+    }
+
     let n = 0;
     for (const a of missing) {
-      const s = await streams.findOne({ _id: a.stream_id }, { projection: { sender: 1, recipient: 1 } });
+      const s = streamById.get(a.stream_id);
+      const transfers = transfersByStream.get(a.stream_id) ?? [];
       const set = new Set<string>();
-      if (s) { set.add(s.sender); set.add(s.recipient); }
+      if (s) {
+        set.add(s.sender);
+        set.add(recipientAt({ ts: a.ts, log_index: a.log_index }, transfers, s.recipient));
+      }
       for (const v of [a.actor, a.to, a.new_owner]) if (v) set.add(v);
       await actions.updateOne({ _id: a._id }, { $set: { participants: [...set] } });
       n++;
@@ -1235,6 +1288,8 @@ export class MemoryIndexerStore implements IndexerStore {
   async getStream(id: number) { return this.streams.get(id) ?? null; }
   async upsertStream(id: number, set: Partial<StreamDoc>, setOnInsert?: Partial<StreamDoc>) {
     const existing = this.streams.get(id);
+    // Keys present in `set` take precedence over `setOnInsert` (spread order
+    // below already gives `set` the final say), mirroring Mongo semantics.
     const merged = { ...(existing ?? setOnInsert ?? {}), ...set, _id: id } as StreamDoc;
     this.streams.set(id, merged);
   }
@@ -1283,6 +1338,37 @@ export function chainStream(over: Partial<StreamChainLike> = {}): StreamChainLik
   };
 }
 ```
+
+- [ ] **Step 3b: Unit-test the `recipientAt` helper**
+
+Create `frontend/src/lib/indexer/store.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { recipientAt } from './store';
+
+const transfers = [
+  { ts: 100, log_index: 1, actor: 'R1', new_owner: 'R2' },
+  { ts: 200, log_index: 1, actor: 'R2', new_owner: 'R3' },
+];
+
+describe('recipientAt', () => {
+  it('uses the previous owner of the first transfer after the action', () => {
+    expect(recipientAt({ ts: 50, log_index: 0 }, transfers, 'R3')).toBe('R1');
+    expect(recipientAt({ ts: 150, log_index: 0 }, transfers, 'R3')).toBe('R2');
+  });
+  it('falls back to the current recipient after the last transfer', () => {
+    expect(recipientAt({ ts: 250, log_index: 0 }, transfers, 'R3')).toBe('R3');
+    expect(recipientAt({ ts: 250, log_index: 0 }, [], 'R9')).toBe('R9');
+  });
+  it('orders by log_index within the same ledger timestamp', () => {
+    expect(recipientAt({ ts: 100, log_index: 0 }, transfers, 'R3')).toBe('R1');
+    expect(recipientAt({ ts: 100, log_index: 1 }, transfers, 'R3')).toBe('R2');
+  });
+});
+```
+
+Run: `npx vitest run src/lib/indexer/store.test.ts` → 3/3.
 
 - [ ] **Step 4: Typecheck, run tests, commit**
 
