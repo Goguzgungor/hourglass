@@ -92,10 +92,12 @@ export interface StreamDoc {
   was_canceled: boolean;
   is_depleted: boolean;
   // Provenance:
-  created_ledger: number;
-  created_tx: string;
+  created_ledger?: number;
+  created_tx?: string;
   created_at: number; // unix seconds (ledger close time when known)
   updated_at: number; // unix seconds
+  /** How the doc was last materialized: from an event or from a reconcile pass. */
+  source?: 'event' | 'reconcile';
 }
 
 /**
@@ -115,6 +117,12 @@ export interface ActionDoc {
   ledger: number;
   tx_hash: string;
   log_index: number;
+  /**
+   * Addresses involved in this action: the stream's sender + recipient at
+   * event time plus the action's actor / to / new_owner. Multikey-indexed so
+   * a wallet's whole history is one query.
+   */
+  participants: string[];
   // Optional per-action fields:
   amount?: string;
   actor?: string;
@@ -162,8 +170,12 @@ export async function metaCollection(): Promise<Collection<MetaDoc>> {
  */
 export async function ensureIndexes(): Promise<void> {
   const streams = await streamsCollection();
-  await streams.createIndex({ sender: 1 });
-  await streams.createIndex({ recipient: 1 });
+  await streams.createIndex({ sender: 1, created_at: -1 });
+  await streams.createIndex({ recipient: 1, created_at: -1 });
+  await streams.createIndex({ token: 1 });
+  await streams.createIndex({ model: 1 });
+  await streams.createIndex({ end_ts: 1 });
+  await streams.createIndex({ created_at: -1, _id: -1 });
   await streams.createIndex({ contract: 1, _id: 1 });
 
   const actions = await actionsCollection();
@@ -175,4 +187,6 @@ export async function ensureIndexes(): Promise<void> {
     { unique: true, name: 'tx_logidx_unique' },
   );
   await actions.createIndex({ stream_id: 1, ts: -1 });
+  await actions.createIndex({ participants: 1, ts: -1, log_index: -1 });
+  await actions.createIndex({ actor: 1, ts: -1 });
 }

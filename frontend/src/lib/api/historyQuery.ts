@@ -6,11 +6,8 @@ import type { ActionDoc } from '../db';
 import { decodeCursor, encodeCursor, isHistoryCursor } from './cursor';
 import { optAddress, optInt, ParamError } from './params';
 
-// `ActionDoc` does not yet declare `participants` (Task 4 adds it). Until
-// then, type the filter with the field added locally so this compiles;
-// Task 4 removes the intersection.
 export interface HistoryQuery {
-  filter: Filter<ActionDoc & { participants?: string[] }>;
+  filter: Filter<ActionDoc>;
   limit: number;
 }
 
@@ -18,7 +15,7 @@ export function buildHistoryQuery(sp: URLSearchParams): HistoryQuery {
   const address = optAddress(sp, 'address', 'G');
   if (!address) throw new ParamError('address is required');
 
-  const filter: Filter<ActionDoc & { participants?: string[] }> =
+  const filter: Filter<ActionDoc> =
     sp.get('mine') === '1' ? { actor: address } : { participants: address };
 
   const streamId = sp.get('stream_id');

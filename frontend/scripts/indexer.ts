@@ -293,6 +293,7 @@ async function handleEvent(p: ParsedEvent): Promise<void> {
     ledger: p.ledger,
     tx_hash: p.tx_hash,
     log_index: p.log_index,
+    participants: [],
   };
 
   // Helper: refresh the materialized stream from the contract.
