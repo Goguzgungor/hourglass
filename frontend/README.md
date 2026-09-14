@@ -9,6 +9,7 @@ Next.js 16 + TypeScript + Tailwind v4 + Turbopack. Consumes the local
 cd frontend
 npm install
 npm run dev
+npm test
 ```
 
 Opens at http://localhost:3000.
@@ -77,15 +78,45 @@ These are wired into Tailwind as `bg-night`, `text-cream`, `border-stroke`, etc.
 
 ## Indexer (Mongo)
 
-The indexer is a long-running Node script that ingests Soroban events from
-the lockup contract into MongoDB. The `/dashboard` page and the
-`/api/streams*` + `/api/stats` routes read from this index, NOT the chain
-directly — so the dashboard renders instantly and survives transient RPC
-hiccups.
+The indexer is a long-running Node script (`scripts/indexer.ts`) that keeps
+MongoDB in sync with the lockup contract. The `/dashboard` page and the
+`/api/streams*`, `/api/history`, `/api/stats`, `/api/tokens` routes read from
+this index, NOT the chain directly — so they render instantly and survive
+transient RPC hiccups. It combines two mechanisms:
+
+- **Cursor-paged event ingestion** (`src/lib/indexer/ingest.ts`). Each tick
+  pages through `getEvents` (up to `INDEXER_MAX_PAGES` pages of up to 100
+  events) starting from the persisted cursor, applying every event
+  idempotently (`handleEvent`, deduped by the unique `(tx_hash, log_index)`
+  index on `actions`) and saving the resulting `{ cursor, ledger }` after
+  every page — so a crash between pages resumes exactly where it stopped,
+  with no gap and no double-count. On first boot (no cursor yet) it starts
+  100 ledgers behind the latest, to absorb ledger-close jitter. If the RPC
+  rejects the cursor (retention error — the node pruned history past it),
+  the indexer resets to `{ cursor: null, ledger: latest - 100 }` and
+  schedules an immediate reconcile, since events in the gap were certainly
+  missed.
+- **Reconcile — chain-truth reconciliation via NFT enumeration**
+  (`src/lib/indexer/reconcile.ts`), run once at startup (self-healing after
+  any downtime) and every `INDEXER_RECONCILE_MS`, plus on demand after a
+  retention reset. It walks the lockup's Enumerable-NFT extension
+  (`total_supply` + `get_token_id(i)` for every live token) to get the exact
+  set of currently-live stream ids, upserts any that are missing or stale in
+  Mongo (tagged `source: 'reconcile'` until a later `created` event fills in
+  `created_tx`/`created_ledger` with `source: 'event'`), and marks streams
+  that disappeared from the enumeration (after a defensive re-check) as
+  depleted. This is what makes the index lossless even across missed events,
+  restarts, or gaps beyond RPC retention.
 
 Uses the existing local Mongo container (`id-mongodb-1` at
 `localhost:27017`) by default. Override with `MONGODB_URL` / `MONGODB_DB`
-env vars.
+env vars. Indexer-specific env vars (all optional):
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `INDEXER_POLL_MS` | `3000` | delay between ingestion ticks |
+| `INDEXER_RECONCILE_MS` | `600000` | delay between periodic reconcile passes |
+| `INDEXER_MAX_PAGES` | `20` | max `getEvents` pages fetched per ingestion tick |
 
 ```bash
 # 1. Make sure quickstart + contracts are up
@@ -110,8 +141,88 @@ will populate.
 ### Collections
 
 - `streams` — one document per stream id, refreshed from the contract on
-  every event so deposited / withdrawn / refunded are always current.
+  every event (or by reconcile) so deposited / withdrawn / refunded are
+  always current; carries `source: 'event' | 'reconcile'` for provenance.
 - `actions` — append-only audit log; idempotent via a unique compound index
-  on `(tx_hash, log_index)`.
-- `meta` — single-doc scratch space; holds the next ledger to fetch so the
-  indexer can resume cleanly after a restart.
+  on `(tx_hash, log_index)`; each action carries `participants` (unique of
+  sender/recipient/actor/to/new_owner) for one-query wallet history.
+- `meta` — single-doc scratch space; `events_cursor` holds `{ cursor,
+  ledger }` so ingestion resumes cleanly after a restart, `last_reconcile`
+  holds the last reconcile pass's `{ at, live, upserted, depleted }`.
+
+## API
+
+All routes: `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`; invalid
+parameters return `400 { error }`; a database that's unreachable returns
+`503 { error, ...empty payload }`. Every list response includes `now`
+(server unix seconds) so clients can render time-dependent values (status,
+withdrawable amount) consistently with the server.
+
+### `GET /api/streams`
+
+| Param | Values | Notes |
+| --- | --- | --- |
+| `address` | `G…` | used together with `role` |
+| `role` | `sender` \| `recipient` \| `any` (default) | `any` → `$or` on both fields |
+| `status` | comma list of `pending,streaming,settled,canceled,depleted`; legacy `active` / `inactive` still accepted | time-dependent members are plain range comparisons against the server's `now` (indexable) |
+| `token` | `C…` | exact match |
+| `model` | `Linear` \| `Tranched` \| `Recurring` | exact match |
+| `q` | text | all digits → `_id` exact; starts with `G` → sender/recipient prefix; starts with `C` → token prefix; otherwise ignored (never a full-collection regex) |
+| `sort` / `order` | `created_at` (default) \| `start_ts` \| `end_ts`; `desc` (default) \| `asc` | tie-broken on `_id` |
+| `limit` | 1–100 (default 50) | |
+| `cursor` | opaque | base64url of `{ k: <sort value>, id: <_id> }` from the previous page |
+| legacy `sender=` / `recipient=` | | mapped to `address` + `role` |
+
+Response: `{ streams: (StreamDoc & { status, withdrawable_now: string })[], next_cursor: string | null, now }`.
+
+### `GET /api/streams/[id]`
+
+Same stream shape as above, plus paginated actions.
+
+| Param | Values | Notes |
+| --- | --- | --- |
+| `limit` | ≤100 (default 50) | actions per page |
+| `cursor` | opaque | base64url cursor into the stream's action log; a malformed cursor is a `400` |
+
+Response: `{ stream, actions, next_cursor: string | null, now }`.
+
+### `GET /api/history`
+
+| Param | Values | Notes |
+| --- | --- | --- |
+| `address` | `G…` | required |
+| `mine` | `1` | only actions where `actor == address` |
+| `stream_id` | number | optional narrowing to one stream |
+| `limit` | ≤100 (default 50) | |
+| `cursor` | opaque | base64url of `{ ts, log_index, id }` from the previous page |
+
+Query is `{ participants: address }` (or `{ actor: address }` with
+`mine=1`), sorted `ts desc, log_index desc, _id desc`. Each item carries
+`stream: { id, model, token, sender, recipient, deposited }` resolved with
+one `$in` query per page.
+
+Response: `{ items, next_cursor: string | null, now }`.
+
+### `GET /api/stats`
+
+Without `address`: the existing global shape `{ total, active, inactive,
+locked }`.
+
+With `address`:
+
+```ts
+{
+  now,
+  counts: { sending: number, receiving: number, by_status: Record<Status, number> },
+  by_token: Array<{ token: string, sent_deposited: string, sent_locked: string,
+                    received_withdrawn: string, received_withdrawable_now: string }>
+}
+```
+
+Amounts are decimal strings (BigInt-safe), computed from the wallet's
+streams via `src/lib/streaming.ts`.
+
+### `GET /api/tokens`
+
+No params. Response: `{ tokens: Array<{ token: string, streams: number }> }`
+— distinct tokens across `streams`, for filter dropdowns.
