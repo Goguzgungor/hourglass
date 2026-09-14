@@ -9,6 +9,11 @@ RPC_URL="https://soroban-testnet.stellar.org:443"
 NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
 HORIZON_URL="https://horizon-testnet.stellar.org"
 IDENTITY="${IDENTITY:-hourglass-user}"
+DEPLOYMENT="deployments/testnet.json"
+# Set REUSE_COMPTROLLER=0 to force a fresh comptroller deploy.
+REUSE_COMPTROLLER="${REUSE_COMPTROLLER:-1}"
+
+command -v jq >/dev/null || { echo "ERROR: jq is required"; exit 1; }
 
 # Ensure network exists in stellar-cli config (idempotent)
 if ! stellar network ls 2>/dev/null | grep -q "^${NETWORK_NAME}\b"; then
@@ -39,7 +44,6 @@ if [ "$STATUS" != "200" ]; then
         sleep 10
     done
     sleep 5
-    # Re-verify account exists on Horizon
     for i in $(seq 1 6); do
         STATUS="$(curl -s -o /dev/null -w '%{http_code}' "${HORIZON_URL}/accounts/${ADMIN}")"
         if [ "$STATUS" = "200" ]; then
@@ -50,7 +54,7 @@ if [ "$STATUS" != "200" ]; then
     done
 fi
 
-# Build artifacts (idempotent — already built but re-run is cheap)
+# Build artifacts (idempotent)
 "$ROOT/scripts/build.sh"
 
 # Native XLM SAC on testnet
@@ -59,20 +63,32 @@ NATIVE_WRAPPED="$(stellar contract id asset \
     --asset native)"
 echo "Native XLM SAC: $NATIVE_WRAPPED"
 
-# Sentinel oracle = admin for Phase 0 (fees default to 0)
-ORACLE_SENTINEL="$ADMIN"
+# ---- Comptroller: reuse the deployed one unless told otherwise ----
+EXISTING_COMPTROLLER=""
+PREVIOUS_LOCKUP=""
+if [ -f "$DEPLOYMENT" ]; then
+    EXISTING_COMPTROLLER="$(jq -r '.comptroller // empty' "$DEPLOYMENT")"
+    PREVIOUS_LOCKUP="$(jq -r '.lockup // empty' "$DEPLOYMENT")"
+fi
 
-echo "==> Deploying comptroller"
-COMPTROLLER_ID="$(stellar contract deploy \
-    --network "$NETWORK_NAME" \
-    --source "$IDENTITY" \
-    --wasm dist/hourglass_comptroller.optimized.wasm \
-    -- \
-    --admin "$ADMIN" \
-    --fee_collector "$ADMIN" \
-    --oracle "$ORACLE_SENTINEL" \
-    --max_staleness_secs 3600)"
-echo "Comptroller: $COMPTROLLER_ID"
+if [ "$REUSE_COMPTROLLER" != "0" ] && [ -n "$EXISTING_COMPTROLLER" ]; then
+    COMPTROLLER_ID="$EXISTING_COMPTROLLER"
+    echo "==> Reusing comptroller $COMPTROLLER_ID"
+else
+    # Sentinel oracle = admin for Phase 0 (fees default to 0)
+    ORACLE_SENTINEL="$ADMIN"
+    echo "==> Deploying comptroller"
+    COMPTROLLER_ID="$(stellar contract deploy \
+        --network "$NETWORK_NAME" \
+        --source "$IDENTITY" \
+        --wasm dist/hourglass_comptroller.optimized.wasm \
+        -- \
+        --admin "$ADMIN" \
+        --fee_collector "$ADMIN" \
+        --oracle "$ORACLE_SENTINEL" \
+        --max_staleness_secs 3600)"
+    echo "Comptroller: $COMPTROLLER_ID"
+fi
 
 echo "==> Deploying lockup"
 LOCKUP_ID="$(stellar contract deploy \
@@ -85,20 +101,34 @@ LOCKUP_ID="$(stellar contract deploy \
     --native_token "$NATIVE_WRAPPED")"
 echo "Lockup: $LOCKUP_ID"
 
+# ---- Merge into deployments/testnet.json (preserve hgt_*/usdc_* etc.) ----
 mkdir -p deployments
-cat > "deployments/testnet.json" <<EOF
-{
-  "network": "$NETWORK_NAME",
-  "rpc_url": "$RPC_URL",
-  "network_passphrase": "$NETWORK_PASSPHRASE",
-  "horizon_url": "$HORIZON_URL",
-  "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "deployer": "$ADMIN",
-  "comptroller": "$COMPTROLLER_ID",
-  "lockup": "$LOCKUP_ID",
-  "native_token": "$NATIVE_WRAPPED"
-}
-EOF
+if [ -f "$DEPLOYMENT" ]; then BASE="$(cat "$DEPLOYMENT")"; else BASE='{}'; fi
+TMP="$(mktemp)"
+echo "$BASE" | jq \
+    --arg network "$NETWORK_NAME" \
+    --arg rpc_url "$RPC_URL" \
+    --arg passphrase "$NETWORK_PASSPHRASE" \
+    --arg horizon "$HORIZON_URL" \
+    --arg deployed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg deployer "$ADMIN" \
+    --arg comptroller "$COMPTROLLER_ID" \
+    --arg lockup "$LOCKUP_ID" \
+    --arg previous_lockup "$PREVIOUS_LOCKUP" \
+    --arg native "$NATIVE_WRAPPED" \
+    '. + {
+        network: $network,
+        rpc_url: $rpc_url,
+        network_passphrase: $passphrase,
+        horizon_url: $horizon,
+        deployed_at: $deployed_at,
+        deployer: $deployer,
+        comptroller: $comptroller,
+        lockup: $lockup,
+        native_token: $native
+    } + (if $previous_lockup != "" and $previous_lockup != $lockup then {previous_lockup: $previous_lockup} else {} end)' \
+    > "$TMP"
+mv "$TMP" "$DEPLOYMENT"
 
-echo "==> Wrote deployments/testnet.json"
-cat deployments/testnet.json
+echo "==> Wrote $DEPLOYMENT"
+cat "$DEPLOYMENT"
