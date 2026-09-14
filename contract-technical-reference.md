@@ -1,8 +1,8 @@
 # Hourglass — Contract Technical Reference
 
-**Version:** v0.1.0-mvp  
+**Version:** v0.2.0  
 **Network:** Stellar Testnet  
-**Deployed:** 2026-05-24  
+**Deployed:** 2026-09-14  
 **License:** Apache-2.0  
 **Repository:** https://github.com/Goguzgungor/hourglass
 
@@ -25,8 +25,9 @@ Hourglass is a token-streaming protocol deployed on Stellar / Soroban. It allows
 
 | Contract | Address |
 |----------|---------|
-| **Lockup** | `CDKYNKWDUBGDZSTJGU6ZYEQ5BUMGIHBXXEZUMAOMQAJRSAVVFFSB3CQK` |
+| **Lockup** | `CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU` |
 | **Comptroller** | `CDIXANE4HA76SPOLISKSZIWGX2FZW4BDFLGUOGRQETELLVEV6O6A3AZW` |
+| **Lockup (v0.1, retired)** | `CDKYNKWDUBGDZSTJGU6ZYEQ5BUMGIHBXXEZUMAOMQAJRSAVVFFSB3CQK` |
 
 **Network details:**
 - Network: Stellar Testnet
@@ -35,7 +36,7 @@ Hourglass is a token-streaming protocol deployed on Stellar / Soroban. It allows
 - Deployer: `GBXDHEVCWZCP45D5VCBLYEQFX33DTHULU6KMH5YPJ54XXOJ6DO2P3MU2`
 
 **Verify on Stellar Expert:**
-- Lockup: https://stellar.expert/explorer/testnet/contract/CDKYNKWDUBGDZSTJGU6ZYEQ5BUMGIHBXXEZUMAOMQAJRSAVVFFSB3CQK
+- Lockup: https://stellar.expert/explorer/testnet/contract/CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU
 - Comptroller: https://stellar.expert/explorer/testnet/contract/CDIXANE4HA76SPOLISKSZIWGX2FZW4BDFLGUOGRQETELLVEV6O6A3AZW
 
 **Test assets deployed on testnet:**
@@ -78,6 +79,8 @@ The core immutable contract. Holds all stream state in Soroban persistent storag
 |----------|-------------|-------------|
 | `create_linear` | Any address | Creates a linear vesting stream |
 | `create_tranched` | Any address | Creates a tranched (step) vesting stream |
+| `create_recurring` | Any address | Creates a recurring stream: `count` unlocks of `amount_per_period`, first at `first_ts`, then every `period_secs` |
+| `create_batch` | Any address | Creates 1–100 streams of mixed shapes for one sender/token in one transaction; atomic; one token transfer |
 | `withdraw_max` | NFT owner (recipient) | Withdraws all currently unlocked tokens |
 | `cancel` | Sender (if `is_cancelable`) | Cancels stream; refunds unvested amount |
 | `renounce` | Sender | Permanently removes sender's cancel right |
@@ -110,12 +113,13 @@ pub struct Stream {
     pub deposited: i128,        // Total tokens locked (stroops)
     pub withdrawn: i128,        // Total tokens withdrawn so far
     pub refunded: i128,         // Tokens refunded to sender on cancel
-    pub shape: StreamShape,     // Linear or Tranched
+    pub shape: StreamShape,     // Linear, Tranched or Recurring
 }
 
 pub enum StreamShape {
     Linear(LinearShape),
     Tranched(TranchedShape),
+    Recurring(RecurringShape),
 }
 
 pub struct LinearShape {
@@ -131,6 +135,13 @@ pub struct TranchedShape {
 pub struct Tranche {
     pub amount: i128,           // Tokens unlocked at this timestamp
     pub ts: u64,                // Unix timestamp
+}
+
+pub struct RecurringShape {
+    pub first_ts: u64,          // First unlock (== start_ts)
+    pub period_secs: u64,       // Seconds between unlocks
+    pub count: u32,             // Number of unlocks; end_ts = first_ts + (count-1)*period_secs
+    pub amount_per_period: i128 // Per-unlock amount; deposited = amount_per_period * count
 }
 ```
 
@@ -208,6 +219,22 @@ streamed = Σ tranche.amount  for all tranches where tranche.ts <= t
 | 2026-07-01 | 25,000 USDC |
 | 2026-10-01 | 25,000 USDC |
 
+### 5.3 Recurring Vesting
+
+Let `F` = `first_ts`, `P` = `period_secs`, `N` = `count`, `A` = `amount_per_period`.
+
+```
+if t < F:
+    streamed = 0
+else:
+    k        = min(N, floor((t - F) / P) + 1)
+    streamed = A × k
+```
+
+Equivalent to a Tranched stream with `N` equal tranches at `F, F+P, …` but stored in four fields with O(1) math.
+
+**Example** — 1,000 USDC on the 1st of each month for 12 months: `A = 1,000`, `P = 2,592,000` (30 days), `N = 12`, deposit `12,000`.
+
 ---
 
 ## 6. NFT Receipt System
@@ -246,6 +273,28 @@ Renounce is a one-way operation and cannot be undone.
 
 ---
 
+## 7b. Batch Creation
+
+`create_batch(sender, token, rows: Vec<CreateRow>) -> Vec<u32>`
+
+```rust
+pub struct CreateRow {
+    pub recipient: Address,
+    pub spec: CreateSpec,        // Linear(LinearParams) | Tranched(TranchedParams) | Recurring(RecurringParams)
+    pub is_cancelable: bool,
+    pub is_transferable: bool,
+}
+```
+
+- One sender, one token, 1–100 rows of any mix of shapes.
+- Every row is validated first; the deposits are pulled with a **single** token transfer; streams are then persisted in row order, so the returned ids are consecutive.
+- Atomic: an invalid row or a failed transfer reverts the whole call — no partial batches.
+- Each stream emits the normal `created` event; batch membership is visible off-chain through the shared transaction hash.
+- Errors: `EmptyBatch` (19), `BatchTooLarge` (20), `InvalidPeriod` (21), `InvalidCount` (22) plus the per-shape create errors.
+- Practical limit measured on testnet (smoke probe, linear rows): **30 rows per transaction**. Tranched rows with many tranches fit fewer.
+
+---
+
 ## 8. Fee Model
 
 Fees are denominated in USD and collected in XLM at stream creation. The fee amount is fetched from the comptroller, which queries the Reflector oracle for the current XLM/USD price.
@@ -272,7 +321,7 @@ No fee is charged on withdrawals, cancels, or any subsequent operations — only
 
 ## 10. Test Coverage
 
-73 tests across the workspace, all running in-process via `soroban_sdk::Env` (no network required):
+106 tests across the workspace, all running in-process via `soroban_sdk::Env` (no network required):
 
 | Module | Test file |
 |--------|-----------|
@@ -280,6 +329,8 @@ No fee is charged on withdrawals, cancels, or any subsequent operations — only
 | Comptroller | `contracts/comptroller/src/tests.rs` |
 | Linear streams | `contracts/lockup/src/tests/linear.rs` |
 | Tranched streams | `contracts/lockup/src/tests/tranched.rs` |
+| Recurring streams | `contracts/lockup/src/tests/recurring.rs` |
+| Batch creation | `contracts/lockup/src/tests/batch.rs` |
 | Withdraw | `contracts/lockup/src/tests/withdraw.rs` |
 | Cancel / Renounce | `contracts/lockup/src/tests/cancel.rs` |
 | Burn | `contracts/lockup/src/tests/burn.rs` |
