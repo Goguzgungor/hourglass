@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "indexer": "tsx scripts/indexer.ts"
+    "indexer": "tsx scripts/indexer.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.2.0",
@@ -29,6 +30,7 @@
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
     "tsx": "^4.22.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }
