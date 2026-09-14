@@ -65,25 +65,23 @@ export function mapStream(s: StreamChain): Partial<StreamDoc> {
   };
 }
 
-type ViewClient = {
+export type ViewClient = {
   get_stream(a: { stream_id: number }): Promise<{ result: unknown }>;
   total_supply(): Promise<{ result: unknown }>;
   get_token_id(a: { index: number }): Promise<{ result: unknown }>;
 };
 
+// Contract errors surface from the SDK as `Error(Contract, #30)` — that's the
+// only reliable signal that the stream record does not exist. A generic
+// "not found" substring would also match transient RPC/HTTP failures (e.g. a
+// proxy's "404 Not Found" body), which must rethrow instead of being treated
+// as a missing stream.
 function isNotFound(err: unknown): boolean {
   const msg = (err as Error)?.message ?? String(err);
-  return msg.includes('StreamNotFound') || msg.includes('#30') || msg.toLowerCase().includes('not found');
+  return msg.includes('StreamNotFound') || msg.includes('#30');
 }
 
-export function makeChainReader(d: { lockup: string; networkPassphrase: string; rpcUrl: string; deployer: string }): ChainReader {
-  const client = new lockupSdk.Client({
-    contractId: d.lockup,
-    networkPassphrase: d.networkPassphrase,
-    rpcUrl: d.rpcUrl,
-    publicKey: d.deployer,
-    allowHttp: d.rpcUrl.startsWith('http://'),
-  }) as unknown as ViewClient;
+export function makeChainReaderFromClient(client: ViewClient): ChainReader {
   return {
     async getStream(id) {
       try {
@@ -102,4 +100,15 @@ export function makeChainReader(d: { lockup: string; networkPassphrase: string; 
       return Number((await client.get_token_id({ index })).result);
     },
   };
+}
+
+export function makeChainReader(d: { lockup: string; networkPassphrase: string; rpcUrl: string; deployer: string }): ChainReader {
+  const client = new lockupSdk.Client({
+    contractId: d.lockup,
+    networkPassphrase: d.networkPassphrase,
+    rpcUrl: d.rpcUrl,
+    publicKey: d.deployer,
+    allowHttp: d.rpcUrl.startsWith('http://'),
+  }) as unknown as ViewClient;
+  return makeChainReaderFromClient(client);
 }
