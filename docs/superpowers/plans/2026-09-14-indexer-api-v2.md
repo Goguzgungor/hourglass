@@ -1391,7 +1391,7 @@ git commit -m "feat(indexer): participants on actions, new indexes, IndexerStore
 - Create: `frontend/src/lib/indexer/chain.ts`, `frontend/src/lib/indexer/chain.test.ts`
 
 **Interfaces:**
-- Produces (events.ts): `type ActionName = ActionDoc['action']`; `interface ParsedEvent { action: ActionName; streamId: number; topics: unknown[]; data: unknown; ledger: number; tx_hash: string; log_index: number; ts: number }`; `parseEvent(e: Api.EventResponse): ParsedEvent | null` (verbatim move from `scripts/indexer.ts`).
+- Produces (events.ts): `type ActionName = ActionDoc['action']`; `interface ParsedEvent { action: ActionName; streamId: number; topics: unknown[]; data: unknown; ledger: number; tx_hash: string; log_index: number; ts: number }`; `parseEvent(e: Api.EventResponse): ParsedEvent | null` (moved from `scripts/indexer.ts`; `log_index = transactionIndex * 1_000_000 + eventOrdinal(e.id) ?? operationIndex` — the RPC event id `<toid>-<%010d>` suffix is the only per-event ordinal, so events of one invocation get distinct keys; see Task 12a).
 - Produces (chain.ts): `interface StreamChain` (the SDK `Stream` shape used by the old indexer, with the three shape variants); `interface ChainReader { getStream(id: number): Promise<StreamChain | null>; totalSupply(): Promise<number>; getTokenId(index: number): Promise<number> }`; `mapStream(s: StreamChain): Partial<StreamDoc>` (the field mapping from the old `fetchStreamFromChain`, now pure); `makeChainReader(d: { lockup: string; networkPassphrase: string; rpcUrl: string; deployer: string }): ChainReader`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1511,7 +1511,7 @@ Expected: FAIL — cannot resolve `./events` / `./chain`.
 
 - [ ] **Step 3: Create `events.ts`**
 
-Move `ParsedEvent`, `KNOWN_ACTIONS` and `parseEvent` verbatim from `scripts/indexer.ts` (lines ~82-156) into this file; export `ParsedEvent`, `ActionName`, `parseEvent`. Imports: `import { scValToNative, type rpc, type xdr } from '@stellar/stellar-sdk'; import type { ActionDoc } from '../db';`. Use `rpc.Api.EventResponse` as the parameter type. No behaviour change.
+Move `ParsedEvent`, `KNOWN_ACTIONS` and `parseEvent` from `scripts/indexer.ts` (lines ~82-156) into this file; export `ParsedEvent`, `ActionName`, `parseEvent`, plus `eventOrdinal(id)` (integer suffix of the RPC event id `<toid>-<%010d>`, `null` when absent) and compute `log_index = txIdx * 1_000_000 + (eventOrdinal(e.id) ?? opIdx)` — the old `txIdx * 1e6 + opIdx` key is identical for every event of one invocation and dropped a batch's 2nd..Nth `created` actions (Task 12a). Imports: `import { scValToNative, type rpc, type xdr } from '@stellar/stellar-sdk'; import type { ActionDoc } from '../db';`.
 
 - [ ] **Step 4: Create `chain.ts`**
 
