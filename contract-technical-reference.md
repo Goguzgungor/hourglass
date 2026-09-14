@@ -359,9 +359,48 @@ rustup target add wasm32v1-none
 
 # Output
 ls dist/
-# hourglass_comptroller.wasm          (~9 KB optimized)
-# hourglass_lockup.wasm               (~90 KB optimized)
+# hourglass_comptroller.wasm          (~11 KB optimized)
+# hourglass_lockup.wasm               (~97 KB optimized)
 ```
+
+---
+
+## 12. Testnet Evidence (v0.2 smoke)
+
+Lockup v0.2 (recurring streams + atomic `create_batch`) was redeployed to
+testnet and smoke-tested on **2026-09-14**.
+
+- Lockup contract: `CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU`
+  https://stellar.expert/explorer/testnet/contract/CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU
+- Stream ids created by the smoke run: linear = **1**, recurring = **2**,
+  batch = **[3, 4, 5]**
+- Batch-size probe result: the largest linear `create_batch` that still fit
+  in one transaction was **30 rows** (40 rows did not fit)
+
+### Deploy transactions
+
+- Upload WASM: https://stellar.expert/explorer/testnet/tx/e78c775f8ee025a95d1e2d59ec5fdf57f967eb28f4f73ce90fcd4cd35ec6912f
+- Deploy contract: https://stellar.expert/explorer/testnet/tx/e07e071e7e2118cb54427a3390e5894b6c5d3e9ae1ab520d8bad9e7ee2a78e6b
+
+### Smoke + probe transactions
+
+- https://stellar.expert/explorer/testnet/tx/08dcfdf7a8bb28cce6b326f8245a2a41c337bd3ad451fab0a68dc32146a33ee4
+- https://stellar.expert/explorer/testnet/tx/277a1af4dd65635a973bc702844428ffe93861a493f2cc977f9acff03126ec18
+- https://stellar.expert/explorer/testnet/tx/5c1ac66639f4dcb13941833514e78ee11b5563ccf601764d780e17557cbe5681
+- https://stellar.expert/explorer/testnet/tx/69774087bc47197d48c67de5ea263406b558b2fa764235edaf00b7a8f98dfc0c
+- https://stellar.expert/explorer/testnet/tx/85c16c1c82524096a966e2a32e91f6f01f839bcf2fe6a8feedb4e9e5ab874d6e
+- https://stellar.expert/explorer/testnet/tx/be7ed20e3ed07ed9ac3e233b8f4ce6d4fab55785a4215d8a261bbb728c4d6831
+- https://stellar.expert/explorer/testnet/tx/c50de153e6b24dcd407f89cb7e6cea45d9ad70fe4e402e1ca996f3c17e448181
+- https://stellar.expert/explorer/testnet/tx/e8badbdf99f45a1f9f153cf3c69e3188c5196c349e984779079547837cf65d4f
+- https://stellar.expert/explorer/testnet/tx/f007941d41c9fc09cc597577aeaf0c600966a4a4b48963c5c0db6636a3eb8328
+
+Both the deploy transactions and the batch-size probe transactions are
+included above. (One 64-hex value in the Task 9 deploy log,
+`2d98e9e91fc7f79b6739ccd5db2e163bf2ffc6f941341a83acbf6c3b10195f01`, is the
+uploaded WASM's hash, not a transaction hash, and is omitted from this
+list for that reason.)
+
+Source: `.superpowers/sdd/2026-09-10-batch-recurring-streams/task-9-report.md`.
 
 ---
 
