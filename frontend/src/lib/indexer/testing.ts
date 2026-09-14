@@ -15,6 +15,8 @@ export class MemoryIndexerStore implements IndexerStore {
   async getStream(id: number) { return this.streams.get(id) ?? null; }
   async upsertStream(id: number, set: Partial<StreamDoc>, setOnInsert?: Partial<StreamDoc>) {
     const existing = this.streams.get(id);
+    // Keys present in `set` take precedence over `setOnInsert` (spread order
+    // below already gives `set` the final say), mirroring Mongo semantics.
     const merged = { ...(existing ?? setOnInsert ?? {}), ...set, _id: id } as StreamDoc;
     this.streams.set(id, merged);
   }
