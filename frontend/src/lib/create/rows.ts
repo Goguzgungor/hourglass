@@ -94,26 +94,8 @@ export function validateRows(
   rows: RowInput[],
   ctx: { sender: string | null; schedule: Schedule | null },
 ): ValidatedRow[] {
-  // Count valid addresses that have parseable, positive amounts
-  const counts = new Map<string, number>();
-  for (const r of rows) {
-    const recipient = r.recipient.trim();
-    const amountStr = r.amount.trim();
-    if (isStellarAddress(recipient)) {
-      if (!/\.\d{8,}/.test(amountStr)) {
-        try {
-          const parsed = parseXlmToStroops(amountStr);
-          if (parsed > 0n) {
-            counts.set(recipient, (counts.get(recipient) ?? 0) + 1);
-          }
-        } catch {
-          // amount is invalid, don't count
-        }
-      }
-    }
-  }
-
-  return rows.map((r) => {
+  // Pass 1: address / amount / spec issues per row (one parsing path).
+  const pass1: ValidatedRow[] = rows.map((r) => {
     const issues: RowIssue[] = [];
     const recipient = r.recipient.trim();
     const amountStr = r.amount.trim();
@@ -146,19 +128,26 @@ export function validateRows(
         }
       } catch (e) {
         issues.push(err('amount_too_small', (e as Error).message));
-        built = undefined;
       }
     }
-
-    // Only warn about duplicates if this row has no address/amount errors
-    const hasAddressOrAmountError = issues.some((i) => ['invalid_address', 'invalid_amount', 'amount_not_positive'].includes(i.code));
-    if (!hasAddressOrAmountError && isStellarAddress(recipient) && (counts.get(recipient) ?? 0) > 1) {
-      issues.push(warn('duplicate_recipient', 'This recipient appears more than once.'));
-    }
-    if (ctx.sender && recipient === ctx.sender) {
-      issues.push(warn('self_recipient', 'You are streaming to yourself.'));
-    }
     return { ...r, issues, total, built };
+  });
+
+  // Pass 2: duplicate / self warnings, only among rows that will actually be submitted.
+  const isClean = (v: ValidatedRow) => !v.issues.some((i) => i.level === 'error');
+  const counts = new Map<string, number>();
+  for (const v of pass1) {
+    if (!isClean(v)) continue;
+    const k = v.recipient.trim();
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return pass1.map((v) => {
+    if (!isClean(v)) return v;
+    const recipient = v.recipient.trim();
+    const issues = [...v.issues];
+    if ((counts.get(recipient) ?? 0) > 1) issues.push(warn('duplicate_recipient', 'This recipient appears more than once.'));
+    if (ctx.sender && recipient === ctx.sender) issues.push(warn('self_recipient', 'You are streaming to yourself.'));
+    return { ...v, issues };
   });
 }
 

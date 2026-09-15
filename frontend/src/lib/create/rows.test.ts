@@ -76,6 +76,15 @@ describe('validateRows', () => {
     expect(out[0].total).toBe(1_0000000n);
     expect(out[0].built).toBeUndefined();
   });
+  it('does not count error rows when detecting duplicates', () => {
+    const out = validateRows(
+      [row('a', G1, '10'), row('b', G1, '0.0000005'), row('c', 'bad', '1')],
+      { sender: null, schedule: recurring },
+    );
+    expect(out[0].issues.map((i) => i.code)).toEqual(['rounding_adjusted']);
+    expect(out[1].issues.map((i) => i.code)).toEqual(['amount_too_small']);
+    expect(out[2].issues.map((i) => i.code)).toEqual(['invalid_address', 'rounding_adjusted']);
+  });
 });
 
 describe('rowsSummary / hasRowErrors', () => {
