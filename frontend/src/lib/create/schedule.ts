@@ -228,11 +228,7 @@ export function buildSpec(s: Schedule, total: bigint): BuiltSpec {
       for (let i = 0; i < s.tranches.length; i++) {
         const last = i === s.tranches.length - 1;
         const amt = last ? total - used : bpsOf(total, s.tranches[i].bps);
-        // Only check intermediate tranches in 2-tranche schedules; 3+ can absorb rounding
-        if (!last && s.tranches.length === 2 && amt <= 0n) {
-          throw new RangeError(`Amount too small for this schedule — ${s.tranches.length} tranches`);
-        }
-        if (last && amt <= 0n) {
+        if (amt <= 0n) {
           throw new RangeError(`Amount too small for this schedule — ${s.tranches.length} tranches`);
         }
         amounts.push(amt);

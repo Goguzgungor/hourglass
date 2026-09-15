@@ -141,7 +141,7 @@ describe('buildSpec', () => {
   });
   it('tranched: last tranche absorbs rounding so the sum equals the total', () => {
     const s: Schedule = { shape: 'tranched', startTs: NOW + 900, tranches: [{ ts: NOW + 1000, bps: 3333 }, { ts: NOW + 2000, bps: 3333 }, { ts: NOW + 3000, bps: 3334 }] };
-    for (const total of [1n, 7n, 1_000_000_1n]) {
+    for (const total of [4n, 7n, 1_000_000_1n]) {
       const b = buildSpec(s, total);
       if (b.spec.tag !== 'Tranched') throw new Error('tag');
       const sum = b.spec.values[0].tranches.reduce((a, t) => a + t.amount, 0n);
