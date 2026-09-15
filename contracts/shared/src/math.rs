@@ -310,7 +310,14 @@ pub fn streamed_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
 /// (should never go negative; defense in depth).
 pub fn withdrawable_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
     let streamed = streamed_amount(stream, now)?;
-    Ok(sub(streamed, stream.withdrawn).unwrap_or(0).max(0))
+    // After `cancel`, `refunded` has already gone back to the sender: the
+    // recipient can never withdraw more than `deposited - refunded` in total,
+    // no matter how far the schedule would have vested by now. Without this
+    // cap a canceled recipient who waits could drain other streams' pooled
+    // balance.
+    let cap = sub(stream.deposited, stream.refunded)?;
+    let vested = if streamed > cap { cap } else { streamed };
+    Ok(sub(vested, stream.withdrawn).unwrap_or(0).max(0))
 }
 
 #[cfg(test)]
@@ -355,6 +362,22 @@ mod dispatcher_tests {
         let mut s = linear_stream(&env);
         s.withdrawn = 200_000;
         assert_eq!(withdrawable_amount(&s, 3_000).unwrap(), 300_000);
+    }
+
+    #[test]
+    fn withdrawable_is_capped_at_deposited_minus_refunded_after_cancel() {
+        let env = Env::default();
+        let mut s = linear_stream(&env);
+        // Canceled at t=3_000 (50% vested): 500k refunded to the sender.
+        s.was_canceled = true;
+        s.refunded = 500_000;
+        // Long after end_ts the schedule alone would say 1_000_000.
+        assert_eq!(streamed_amount(&s, 99_999).unwrap(), 1_000_000);
+        assert_eq!(withdrawable_amount(&s, 99_999).unwrap(), 500_000);
+        s.withdrawn = 200_000;
+        assert_eq!(withdrawable_amount(&s, 99_999).unwrap(), 300_000);
+        s.withdrawn = 500_000;
+        assert_eq!(withdrawable_amount(&s, 99_999).unwrap(), 0);
     }
 }
 

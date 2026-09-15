@@ -170,3 +170,81 @@ fn asset_conservation_across_batch() {
     assert!(refunded > 0, "cancel refunded nothing");
     assert_eq!(deposited, withdrawn + refunded + in_contract);
 }
+
+/// After `cancel`, the recipient's withdrawable amount must never exceed
+/// `deposited - refunded - withdrawn`, no matter how much time passes: the
+/// refund already left the contract, and any excess would be paid out of
+/// other streams' pooled balance.
+#[test]
+fn withdrawable_after_cancel_is_capped_at_deposited_minus_refunded() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_linear(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &1_000_000i128,
+        &(now + 100),
+        &(now + 100),
+        &(now + 1_100),
+        &0i128,
+        &0i128,
+        &true,
+        &true,
+    );
+
+    // Cancel at 60%: 600k vested, 400k refunded to the sender.
+    f.env.ledger().set_timestamp(now + 700);
+    f.lockup.cancel(&id);
+    let s = f.lockup.get_stream(&id);
+    assert_eq!(s.refunded, 400_000);
+
+    // Long after the schedule would have ended, the recipient still only has
+    // the 600k that stayed in the contract.
+    f.env.ledger().set_timestamp(now + 100_000);
+    assert_eq!(f.lockup.withdrawable_amount(&id), 600_000);
+
+    f.lockup.withdraw_max(&id, &f.recipient);
+    assert_eq!(f.token_client.balance(&f.recipient), 600_000);
+    assert_eq!(f.token_client.balance(&f.lockup_addr), 0);
+    let s = f.lockup.get_stream(&id);
+    assert_eq!(s.withdrawn, 600_000);
+    assert!(s.is_depleted);
+}
+
+/// Same cap on a tranched stream canceled between tranches.
+#[test]
+fn tranched_withdrawable_after_cancel_is_capped() {
+    let f = setup();
+    let now = f.env.ledger().timestamp();
+    let id = f.lockup.create_tranched(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &vec![
+            &f.env,
+            Tranche {
+                amount: 100,
+                ts: now + 100,
+            },
+            Tranche {
+                amount: 200,
+                ts: now + 300,
+            },
+            Tranche {
+                amount: 700,
+                ts: now + 600,
+            },
+        ],
+        &true,
+        &true,
+    );
+    // Cancel after the first tranche: 100 vested, 900 refunded.
+    f.env.ledger().set_timestamp(now + 150);
+    f.lockup.cancel(&id);
+    f.env.ledger().set_timestamp(now + 10_000);
+    assert_eq!(f.lockup.withdrawable_amount(&id), 100);
+    f.lockup.withdraw_max(&id, &f.recipient);
+    assert_eq!(f.token_client.balance(&f.lockup_addr), 0);
+    assert!(f.lockup.get_stream(&id).is_depleted);
+}
