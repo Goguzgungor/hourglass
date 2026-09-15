@@ -123,6 +123,16 @@ describe('runReducer', () => {
     r = runReducer(r, { type: 'chunk_done', index: 2, txHash: 'h', streamIds: [] });
     expect(nextChunk(r)).toBeNull();
   });
+  it('shift_remaining is a no-op on completed and aborted runs', () => {
+    const done = runReducer(run(1), { type: 'chunk_done', index: 0, txHash: 'h', streamIds: [1] });
+    expect(runReducer(done, { type: 'shift_remaining', seconds: 900 })).toBe(done);
+    const aborted = runReducer(run(2), { type: 'abort' });
+    expect(runReducer(aborted, { type: 'shift_remaining', seconds: 900 })).toBe(aborted);
+  });
+  it('chunk_failed on an unknown index leaves the run untouched', () => {
+    const r = run(2);
+    expect(runReducer(r, { type: 'chunk_failed', index: 7, error: { kind: 'network', message: 'x' }, pause: 'failed' })).toBe(r);
+  });
 });
 
 describe('loadStoredRun', () => {

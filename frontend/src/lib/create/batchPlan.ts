@@ -121,13 +121,15 @@ export function runReducer(run: BatchRun, a: RunAction): BatchRun {
       const allDone = chunks.every((c) => c.status === 'done');
       return allDone ? { ...run, chunks, phase: 'completed', pauseReason: undefined } : { ...run, chunks };
     }
-    case 'chunk_failed':
+    case 'chunk_failed': {
+      if (!run.chunks.some((c) => c.index === a.index)) return run;
       return {
         ...run,
         phase: 'paused',
         pauseReason: a.pause,
         chunks: updateChunk(run, a.index, (c) => ({ ...c, status: 'failed', error: a.error, attempts: c.attempts + 1 })),
       };
+    }
     case 'split_chunk': {
       const i = run.chunks.findIndex((c) => c.index === a.index);
       if (i === -1) return run;
@@ -142,7 +144,8 @@ export function runReducer(run: BatchRun, a: RunAction): BatchRun {
       }));
       return { ...run, chunks };
     }
-    case 'shift_remaining':
+    case 'shift_remaining': {
+      if (run.phase !== 'running' && run.phase !== 'paused') return run;
       return {
         ...run,
         phase: 'running',
@@ -153,6 +156,7 @@ export function runReducer(run: BatchRun, a: RunAction): BatchRun {
             : { ...c, schedule: shiftSchedule(c.schedule, a.seconds), status: 'pending', error: undefined },
         ),
       };
+    }
     case 'resume':
       return { ...run, phase: 'running', pauseReason: undefined };
     case 'pause':
