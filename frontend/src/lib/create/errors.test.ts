@@ -17,7 +17,7 @@ describe('classifyTxError', () => {
   });
   it('detects resource / size failures from simulation and send', () => {
     expect(classifyTxError(new Error('Transaction simulation failed: "HostError: Error(Budget, ExceededLimit)"')).kind).toBe('resource');
-    expect(classifyTxError(new Error('Sending the transaction to the network failed!\n{"status":"ERROR","errorResult":{"_switch":{"name":"txSorobanInvalid","value":-16}}}')).kind).toBe('resource');
+    expect(classifyTxError(new Error('Sending the transaction to the network failed!\n{"status":"ERROR","errorResult":{"_switch":{"name":"txSorobanInvalid","value":-17}}}')).kind).toBe('resource');
     expect(classifyTxError(new Error('transaction submission failed: TxSorobanInvalid')).kind).toBe('resource');
     expect(classifyTxError(new Error('resource limit exceeded')).kind).toBe('resource');
   });
@@ -35,6 +35,22 @@ describe('classifyTxError', () => {
   it('reads nested sdk fields when present', () => {
     const e = Object.assign(new Error('Transaction simulation failed'), { simulation: { error: 'HostError: Error(Contract, #13)' } });
     expect(classifyTxError(e)).toMatchObject({ kind: 'contract', code: 13 });
+  });
+  it('does not mistake XDR encoding range errors for resource failures', () => {
+    expect(classifyTxError(new RangeError('value too large for i64: 100000000000000000000000'))).toEqual({
+      kind: 'network',
+      message: 'value too large for i64: 100000000000000000000000',
+    });
+  });
+  it('reads a structured sendTransactionResponse.errorResult and survives circular objects', () => {
+    const structured = Object.assign(new Error('Sending the transaction to the network failed!'), {
+      sendTransactionResponse: { errorResult: { _switch: { name: 'txSorobanInvalid', value: -17 } } },
+    });
+    expect(classifyTxError(structured).kind).toBe('resource');
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    const bad = Object.assign(new Error('Failed to fetch'), { sendTransactionResponse: { errorResult: circular } });
+    expect(classifyTxError(bad)).toEqual({ kind: 'network', message: 'Failed to fetch' });
   });
   it('describeError renders a one-line human message', () => {
     expect(describeError({ kind: 'rejected', message: 'x' })).toBe('Signature rejected in the wallet.');

@@ -43,7 +43,7 @@ export const CONTRACT_ERRORS: Record<number, { name: string; message: string }> 
 
 const REJECTED_RE = /user (rejected|declined|denied)|rejected by user|cancell?ed by user|User declined|declined the request/i;
 const RESOURCE_RE =
-  /ExceededLimit|exceeds? (the )?(resource|size|budget)|resource limit|TxSorobanInvalid|txSorobanInvalid|TX_SOROBAN_INVALID|too large|exceeds the maximum/i;
+  /ExceededLimit|exceeds? (the )?(resource|size|budget)|resource limit|TxSorobanInvalid|txSorobanInvalid|TX_SOROBAN_INVALID/i;
 const CONTRACT_RE = /Error\(Contract, #(\d+)\)/;
 
 function collectText(e: unknown): string {
