@@ -17,6 +17,7 @@ import {
   formatDuration,
   truncAddress,
 } from '@/lib/format';
+import { deriveStatus } from '@/lib/streaming';
 import type { StreamDoc } from '@/lib/db';
 
 /* ----------------------------------------------------------------- *
@@ -31,14 +32,6 @@ interface StatsResponse {
 }
 
 type Status = StreamStatusTag;
-
-function deriveStatus(s: StreamDoc, nowSec: number): Status {
-  if (s.is_depleted) return 'DEPLETED';
-  if (s.was_canceled) return 'CANCELED';
-  if (nowSec < s.start_ts) return 'PENDING';
-  if (nowSec >= s.end_ts) return 'SETTLED';
-  return 'STREAMING';
-}
 
 /** Proportion of the deposit that has streamed already, clamped to [0,1]. */
 function streamedFraction(s: StreamDoc, nowSec: number): number {
