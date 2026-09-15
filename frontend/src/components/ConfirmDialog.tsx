@@ -30,20 +30,28 @@ export default function ConfirmDialog({
   children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Latest callbacks/flags without re-running the focus effect on every render
+  // (call sites pass inline arrows, which would otherwise steal focus on each keystroke).
+  const onDismissRef = useRef(onDismiss);
+  const busyRef = useRef(busy);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+    busyRef.current = busy;
+  });
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onDismiss();
+      if (e.key === 'Escape' && !busyRef.current) onDismissRef.current();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       previous?.focus?.();
     };
-  }, [open, busy, onDismiss]);
+  }, [open]);
 
   if (!open) return null;
 
