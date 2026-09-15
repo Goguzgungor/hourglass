@@ -326,7 +326,7 @@ function StreamRow({
     timeHint = 'depleted';
   }
 
-  const modelBadge = stream.model === 'Linear' ? 'LINEAR' : 'TRANCHED';
+  const modelBadge = stream.model.toUpperCase();
 
   // Time hint has a mono live segment in the STREAMING/PENDING case.
   const splitHint = timeHint.match(/^(.*?)(\d+[a-z][a-z\s\d]*[a-z])$/);
@@ -363,7 +363,7 @@ function StreamRow({
               <span>{modelBadge}</span>
             </p>
 
-            {stream.model === 'Linear' ? (
+            {stream.model !== 'Tranched' ? (
               <p className="font-mono text-xl xl:text-2xl 2xl:text-3xl text-cream tabular truncate">
                 {formatStroops(stream.deposited)}
                 <span className="ml-2 text-[10px] xl:text-[11px] 2xl:text-[12px] uppercase tracking-[0.18em] text-cream-dim">

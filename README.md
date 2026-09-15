@@ -4,15 +4,15 @@ Token streaming on Stellar / Soroban. Clean-room reimplementation inspired by Sa
 
 ## What it does
 
-Lock SEP-41 tokens into a vesting schedule (linear with cliff, or stepped tranches), represented as a transferable NFT receipt. Senders can cancel mid-stream (until renounced); recipients can withdraw the accrued portion any time.
+Lock SEP-41 tokens into a vesting schedule (linear with cliff, stepped tranches, or recurring periodic equal unlocks — created singly or in an atomic batch), represented as a transferable NFT receipt. Senders can cancel mid-stream (until renounced); recipients can withdraw the accrued portion any time.
 
 ## Status
 
-Pre-MVP — contracts feature-complete + tested in-process; testnet/SDK/frontend deferred to follow-up plans.
+Lockup **v0.2.1** on testnet — Linear, Tranched and **Recurring** streams, atomic **batch creation**, NFT receipts. Frontend + Mongo indexer deployed; batch/recurring create UI, search/filtering and treasury prep are the next phase-2 sub-projects (see `docs/superpowers/specs/2026-09-10-batch-recurring-streams-design.md`).
 
-- 73 tests pass workspace-wide (shared 29 + comptroller 11 + lockup 33).
-- Wasm builds clean (`scripts/build.sh`): comptroller ~9 KB, lockup ~90 KB optimized.
-- No public-testnet deploys — everything is local `Env` and (optionally) a local Stellar quickstart docker.
+- `cargo test` — all workspace tests pass in-process (no network); 111 tests (comptroller 11, lockup 60, shared 40).
+- Wasm builds clean (`scripts/build.sh`): comptroller ~11 KB, lockup ~97 KB optimized.
+- Testnet: contract ids in `deployments/testnet.json`; `scripts/smoke-testnet.sh` exercises linear, recurring and batch creation end-to-end.
 
 See `docs/superpowers/specs/2026-05-23-hourglass-design.md` for the design and `docs/superpowers/plans/2026-05-23-hourglass-contracts-mvp.md` for the implementation plan.
 

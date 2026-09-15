@@ -39,11 +39,25 @@ pub struct TranchedShape {
     pub tranches: Vec<Tranche>,
 }
 
+/// N equal unlocks of `amount_per_period`, the first at `first_ts`, then every
+/// `period_secs`. `stream.start_ts == first_ts`,
+/// `stream.end_ts == first_ts + (count - 1) * period_secs`,
+/// `stream.deposited == amount_per_period * count`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecurringShape {
+    pub first_ts: u64,
+    pub period_secs: u64,
+    pub count: u32,
+    pub amount_per_period: i128,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamShape {
     Linear(LinearShape),
     Tranched(TranchedShape),
+    Recurring(RecurringShape),
 }
 
 #[contracttype]
@@ -67,6 +81,55 @@ pub struct Stream {
 /// Maximum number of tranches in a Tranched stream. Bounded to keep
 /// storage entry size + tx resource fee predictable.
 pub const MAX_TRANCHES: u32 = 100;
+
+/// Maximum rows accepted by `create_batch`. A sanity cap that yields a clear
+/// error; the real bound is the per-transaction resource budget.
+pub const MAX_BATCH_ROWS: u32 = 100;
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinearParams {
+    pub deposited: i128,
+    pub start_ts: u64,
+    pub cliff_ts: u64,
+    pub end_ts: u64,
+    pub unlock_at_start: i128,
+    pub unlock_at_cliff: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranchedParams {
+    pub tranches: Vec<Tranche>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecurringParams {
+    pub amount_per_period: i128,
+    pub period_secs: u64,
+    pub count: u32,
+    pub first_ts: u64,
+}
+
+/// Shape-specific create parameters (no recipient / flags).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CreateSpec {
+    Linear(LinearParams),
+    Tranched(TranchedParams),
+    Recurring(RecurringParams),
+}
+
+/// One row of a `create_batch` call.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreateRow {
+    pub recipient: Address,
+    pub spec: CreateSpec,
+    pub is_cancelable: bool,
+    pub is_transferable: bool,
+}
 
 impl Stream {
     /// Pure status derivation from current timestamp. Does not read storage.
@@ -153,5 +216,26 @@ mod tests {
         s.was_canceled = true;
         s.is_depleted = true;
         assert_eq!(s.status(50), StreamStatus::Depleted);
+    }
+
+    #[test]
+    fn status_for_recurring_uses_start_and_end() {
+        let env = Env::default();
+        let mut s = stream(&env);
+        s.start_ts = 1_000;
+        s.end_ts = 1_000 + 11 * 100;
+        s.deposited = 12_000;
+        s.shape = StreamShape::Recurring(RecurringShape {
+            first_ts: 1_000,
+            period_secs: 100,
+            count: 12,
+            amount_per_period: 1_000,
+        });
+        assert_eq!(s.status(999), StreamStatus::Pending);
+        assert_eq!(s.status(1_000), StreamStatus::Streaming);
+        assert_eq!(s.status(2_099), StreamStatus::Streaming);
+        assert_eq!(s.status(2_100), StreamStatus::Settled);
+        // withdrawable goes through the dispatcher
+        assert_eq!(s.withdrawable(1_250), 3_000);
     }
 }

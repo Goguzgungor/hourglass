@@ -21,6 +21,7 @@ import {
   truncAddress,
 } from '@/lib/format';
 import type { Stream, StreamStatus } from 'hourglass/lockup';
+import type { StreamShape as ViewShape } from '@/components/LiveCounter';
 
 import CelestialDial from '@/components/CelestialDial';
 import EmissionChart from '@/components/EmissionChart';
@@ -43,8 +44,58 @@ function statusTag(s: StreamStatus): Status {
   return s.tag.toUpperCase() as Status;
 }
 
-function shapeLabel(s: Stream): 'LINEAR' | 'TRANCHED' {
-  return s.shape.tag === 'Linear' ? 'LINEAR' : 'TRANCHED';
+type ShapeLabel = 'LINEAR' | 'TRANCHED' | 'RECURRING';
+
+function shapeLabel(s: Stream): ShapeLabel {
+  if (s.shape.tag === 'Linear') return 'LINEAR';
+  if (s.shape.tag === 'Tranched') return 'TRANCHED';
+  return 'RECURRING';
+}
+
+function shapeTitle(s: Stream): string {
+  const l = shapeLabel(s);
+  return l === 'LINEAR' ? 'Linear' : l === 'RECURRING' ? 'Recurring' : 'Tranched';
+}
+
+/** Expand a Recurring shape into equal tranches for the tranched view paths. */
+function recurringToTranches(r: {
+  first_ts: bigint | number;
+  period_secs: bigint | number;
+  count: number;
+  amount_per_period: bigint;
+}): Array<{ amount: bigint; ts: number }> {
+  const first = Number(r.first_ts);
+  const period = Number(r.period_secs);
+  const amount = BigInt(r.amount_per_period);
+  return Array.from({ length: Number(r.count) }, (_, i) => ({
+    amount,
+    ts: first + i * period,
+  }));
+}
+
+/**
+ * View-model shape consumed by CelestialDial / LiveCounter / EmissionChart.
+ * Recurring streams are presented as Tranched (their math is identical).
+ */
+function viewShape(s: Stream): ViewShape {
+  if (s.shape.tag === 'Linear') {
+    return {
+      tag: 'Linear',
+      cliff_ts: Number(s.shape.values[0].cliff_ts),
+      unlock_at_start: BigInt(s.shape.values[0].unlock_at_start),
+      unlock_at_cliff: BigInt(s.shape.values[0].unlock_at_cliff),
+    };
+  }
+  if (s.shape.tag === 'Tranched') {
+    return {
+      tag: 'Tranched',
+      tranches: s.shape.values[0].tranches.map((t) => ({
+        amount: BigInt(t.amount),
+        ts: Number(t.ts),
+      })),
+    };
+  }
+  return { tag: 'Tranched', tranches: recurringToTranches(s.shape.values[0]) };
 }
 
 /**
@@ -389,6 +440,7 @@ function LoadedStream({
   );
   const hasCliff = stream.shape.tag === 'Linear' && cliffTs > startTs;
   const duration = Math.max(0, endTs - startTs);
+  const vshape = useMemo(() => viewShape(stream), [stream]);
 
   const isSender = !!address && address === stream.sender;
   const isRecipient = !!address && address === stream.recipient;
@@ -680,22 +732,7 @@ function LoadedStream({
               cliff_ts={hasCliff ? cliffTs : startTs}
               end_ts={endTs}
               status={status}
-              shape={
-                stream.shape.tag === 'Linear'
-                  ? {
-                      tag: 'Linear',
-                      cliff_ts: Number(stream.shape.values[0].cliff_ts),
-                      unlock_at_start: BigInt(stream.shape.values[0].unlock_at_start),
-                      unlock_at_cliff: BigInt(stream.shape.values[0].unlock_at_cliff),
-                    }
-                  : {
-                      tag: 'Tranched',
-                      tranches: stream.shape.values[0].tranches.map((t) => ({
-                        amount: BigInt(t.amount),
-                        ts: Number(t.ts),
-                      })),
-                    }
-              }
+              shape={vshape}
               tokenSymbol="XLM"
             />
           </div>
@@ -838,11 +875,13 @@ function LoadedStream({
                     </p>
                   )}
                 </div>
-                {stream.shape.tag === 'Tranched' && (
+                {vshape.tag === 'Tranched' && (
                   <div className="mt-8 pt-6 border-t border-stroke/40">
-                    <p className="eyebrow text-cream-dim mb-4">Tranches</p>
+                    <p className="eyebrow text-cream-dim mb-4">
+                      {stream.shape.tag === 'Recurring' ? 'Unlocks' : 'Tranches'}
+                    </p>
                     <ul className="space-y-0">
-                      {stream.shape.values[0].tranches.map((t, i) => (
+                      {vshape.tranches.map((t, i) => (
                         <li
                           key={i}
                           className="grid grid-cols-[28px_1fr] sm:grid-cols-[28px_1fr_180px] items-baseline gap-x-4 gap-y-1 py-3 border-b border-stroke/40 last:border-b-0"
@@ -851,13 +890,13 @@ function LoadedStream({
                             #{i + 1}
                           </span>
                           <span className="font-mono text-sm text-sand-bright tabular break-words">
-                            +{formatStroops(BigInt(t.amount))}{' '}
+                            +{formatStroops(t.amount)}{' '}
                             <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim ml-1">
                               XLM
                             </span>
                           </span>
                           <span className="font-mono text-xs text-cream-dim col-start-2 sm:col-start-3 text-left sm:text-right">
-                            {formatTimestamp(Number(t.ts))}
+                            {formatTimestamp(t.ts)}
                           </span>
                         </li>
                       ))}
@@ -870,29 +909,14 @@ function LoadedStream({
             {activeTab === 'emission' && (
               <div className="mt-8 reveal" style={{ animationDelay: '60ms' }}>
                 <EmissionChart
-                  model={stream.shape.tag === 'Linear' ? 'Linear' : 'Tranched'}
+                  model={vshape.tag}
                   start_ts={startTs}
                   cliff_ts={hasCliff ? cliffTs : undefined}
                   end_ts={endTs}
                   deposited={deposited}
-                  unlock_at_start={
-                    stream.shape.tag === 'Linear'
-                      ? BigInt(stream.shape.values[0].unlock_at_start)
-                      : 0n
-                  }
-                  unlock_at_cliff={
-                    stream.shape.tag === 'Linear'
-                      ? BigInt(stream.shape.values[0].unlock_at_cliff)
-                      : 0n
-                  }
-                  tranches={
-                    stream.shape.tag === 'Tranched'
-                      ? stream.shape.values[0].tranches.map((t) => ({
-                          amount: BigInt(t.amount),
-                          ts: Number(t.ts),
-                        }))
-                      : []
-                  }
+                  unlock_at_start={vshape.tag === 'Linear' ? vshape.unlock_at_start : 0n}
+                  unlock_at_cliff={vshape.tag === 'Linear' ? vshape.unlock_at_cliff : 0n}
+                  tranches={vshape.tag === 'Tranched' ? vshape.tranches : []}
                   tokenSymbol="XLM"
                 />
                 <p className="mt-4 font-mono text-xs text-cream-dim">
@@ -1102,7 +1126,7 @@ function LoadedStream({
               icon={<IconShape />}
               value={
                 <span className="font-mono text-sm text-cream">
-                  {shapeLabel(stream) === 'LINEAR' ? 'Linear' : 'Tranched'}
+                  {shapeTitle(stream)}
                 </span>
               }
             />

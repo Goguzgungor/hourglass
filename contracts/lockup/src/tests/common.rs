@@ -4,7 +4,7 @@ use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, Ledger as _},
     token::{StellarAssetClient, TokenClient},
-    Address, Env,
+    Address, ConversionError, Env, InvokeError,
 };
 
 /// A no-op stub contract registered at the oracle address so `env.as_contract`
@@ -80,5 +80,21 @@ pub fn setup<'a>() -> Fixture<'a> {
         comptroller,
         native,
         native_admin,
+    }
+}
+
+/// Extract the contract `Error` from a `try_*` client call that failed inside
+/// the contract (via `panic_with_error!`). Every lockup entry point returns a
+/// plain value (not `Result<T, Error>`) and panics on invalid input, so the
+/// generated `try_*` client method's `Err(Ok(_))` payload is a raw
+/// `soroban_sdk::Error`, not `hourglass_shared::Error` directly — this
+/// converts it. Panics if the call succeeded or failed for a non-contract
+/// reason (e.g. a host/auth error).
+pub fn contract_error<T: core::fmt::Debug>(
+    res: Result<Result<T, ConversionError>, Result<soroban_sdk::Error, InvokeError>>,
+) -> hourglass_shared::Error {
+    match res {
+        Err(Ok(e)) => hourglass_shared::Error::try_from(e).expect("not a contract error"),
+        other => panic!("expected a contract error, got {:?}", other),
     }
 }

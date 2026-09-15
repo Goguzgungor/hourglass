@@ -15,6 +15,11 @@ jobs:
           targets: wasm32v1-none
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # Lockup's `contractimport!` reads the comptroller wasm from
+      # target/wasm32v1-none/release at compile time, so it must exist before
+      # anything compiles the lockup crate (clippy, test).
+      - name: build comptroller wasm (needed by lockup's contractimport)
+        run: cargo build --target wasm32v1-none --release -p hourglass-comptroller
       - name: fmt
         run: cargo fmt --all -- --check
       # TODO: re-enable `-D warnings` once the comptroller oracle path is wired
@@ -23,7 +28,5 @@ jobs:
         run: cargo clippy --workspace --all-targets
       - name: test
         run: cargo test --workspace
-      - name: wasm build (comptroller first, then lockup)
-        run: |
-          cargo build --target wasm32v1-none --release -p hourglass-comptroller
-          cargo build --target wasm32v1-none --release -p hourglass-lockup
+      - name: wasm build (lockup)
+        run: cargo build --target wasm32v1-none --release -p hourglass-lockup

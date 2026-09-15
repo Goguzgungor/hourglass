@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/hourglass-protocol/hourglass"
@@ -16,6 +16,11 @@ rust-version = "1.79"
 [workspace.dependencies]
 # Pin to soroban-sdk 25.3 because stellar-tokens 0.7.1 hard-pins it; mixing
 # 25/26 in the dependency graph breaks the macro-generated trait machinery.
+#
+# Lock-only pins (Cargo.lock is tracked). A fresh resolution pulls versions that
+# break the build; restore with:
+#   cargo update -p ed25519-dalek@3.0.0 --precise 2.2.0   # soroban-env-host 25 needs 2.x
+#   cargo update -p stellar-governance@0.7.2 --precise 0.7.1  # keeps a single soroban-sdk 25.3.1
 soroban-sdk = "=25.3.1"
 stellar-tokens = "=0.7.1"
 stellar-access = "=0.7.1"
