@@ -1,8 +1,8 @@
 // frontend/src/lib/create/useTemplates.ts
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { safeStorage } from './storage';
+import { useCallback, useEffect, useState } from 'react';
+import { safeStorage, type StorageLike } from './storage';
 import {
   BUILT_IN_TEMPLATES,
   deleteUserTemplate,
@@ -17,13 +17,16 @@ import {
 export type TemplateDraft = Omit<Template, 'id' | 'builtIn' | 'createdAt'> & { id?: string };
 
 export function useTemplates() {
-  const storage = useMemo(() => safeStorage('local'), []);
-  // Loaded after mount so server and client render the same first frame.
+  // Storage and user templates are resolved after mount so the server frame and
+  // the client's hydration frame are identical (canSave=false, user=[]).
+  const [storage, setStorage] = useState<StorageLike | null>(null);
   const [user, setUser] = useState<Template[]>([]);
-  const refresh = useCallback(() => setUser(loadUserTemplates(storage)), [storage]);
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    const s = safeStorage('local');
+    setStorage(s);
+    setUser(loadUserTemplates(s));
+  }, []);
+  const refresh = useCallback(() => setUser(loadUserTemplates(storage)), [storage]);
 
   const save = useCallback(
     (draft: TemplateDraft, nowSec: number): SaveResult => {

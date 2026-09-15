@@ -2,6 +2,7 @@
 'use client';
 
 import type { Dispatch } from 'react';
+import { MAX_TRANCHES } from '@/lib/create/schedule';
 import type { FormAction, FormState } from '@/lib/create/formState';
 import { Field, PctInput, bareInputClass, ghostButtonClass } from './fields';
 
@@ -70,7 +71,7 @@ function TranchedFields({ state, errors, dispatch }: Props) {
             <button type="button" className={ghostButtonClass} onClick={() => dispatch({ type: 'split_tranches_evenly' })} disabled={t.tranches.length === 0}>
               Split evenly
             </button>
-            <button type="button" className={ghostButtonClass} onClick={() => dispatch({ type: 'add_tranche' })} disabled={t.tranches.length >= 100}>
+            <button type="button" className={ghostButtonClass} onClick={() => dispatch({ type: 'add_tranche' })} disabled={t.tranches.length >= MAX_TRANCHES}>
               + Tranche
             </button>
           </div>
