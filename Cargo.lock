@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "hourglass-comptroller"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "hourglass-shared",
  "soroban-sdk",
@@ -808,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "hourglass-lockup"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "hourglass-comptroller",
  "hourglass-shared",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "hourglass-shared"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "soroban-sdk",
 ]

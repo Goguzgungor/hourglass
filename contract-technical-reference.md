@@ -1,8 +1,8 @@
 # Hourglass — Contract Technical Reference
 
-**Version:** v0.2.0  
+**Version:** v0.2.1  
 **Network:** Stellar Testnet  
-**Deployed:** 2026-09-14  
+**Deployed:** 2026-09-15  
 **License:** Apache-2.0  
 **Repository:** https://github.com/Goguzgungor/hourglass
 
@@ -25,8 +25,9 @@ Hourglass is a token-streaming protocol deployed on Stellar / Soroban. It allows
 
 | Contract | Address |
 |----------|---------|
-| **Lockup** | `CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU` |
+| **Lockup** | `CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL` |
 | **Comptroller** | `CDIXANE4HA76SPOLISKSZIWGX2FZW4BDFLGUOGRQETELLVEV6O6A3AZW` |
+| **Lockup (v0.2, retired — post-cancel over-withdraw bug)** | `CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU` |
 | **Lockup (v0.1, retired)** | `CDKYNKWDUBGDZSTJGU6ZYEQ5BUMGIHBXXEZUMAOMQAJRSAVVFFSB3CQK` |
 
 **Network details:**
@@ -36,7 +37,7 @@ Hourglass is a token-streaming protocol deployed on Stellar / Soroban. It allows
 - Deployer: `GBXDHEVCWZCP45D5VCBLYEQFX33DTHULU6KMH5YPJ54XXOJ6DO2P3MU2`
 
 **Verify on Stellar Expert:**
-- Lockup: https://stellar.expert/explorer/testnet/contract/CCP7G5WXXUUNMLKUOIZXFTYF46NSE45ZLWMOTTIMGTQKKPNADF55DRSU
+- Lockup: https://stellar.expert/explorer/testnet/contract/CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL
 - Comptroller: https://stellar.expert/explorer/testnet/contract/CDIXANE4HA76SPOLISKSZIWGX2FZW4BDFLGUOGRQETELLVEV6O6A3AZW
 
 **Test assets deployed on testnet:**
@@ -255,9 +256,10 @@ This makes streams composable: a recipient can sell a vesting position, use it a
 ### Cancel
 1. Sender calls `cancel(stream_id)`
 2. Contract sets `was_canceled = true`
-3. Refund = `deposited - withdrawn` (all unvested + unstreamed tokens)
+3. Refund = `deposited - streamed(now)` (everything not yet vested)
 4. Tokens are returned to the sender immediately
-5. Recipient retains whatever they had already withdrawn
+5. Recipient keeps what had vested by the cancel time: whatever was already withdrawn plus `streamed(now) - withdrawn`, which stays withdrawable
+6. From then on the recipient's withdrawable amount is capped at `deposited - refunded - withdrawn` — the schedule no longer vests anything beyond the cancel point (v0.2.1 fix; earlier lockups let the recipient withdraw past the refund and drain the pooled balance)
 
 **Cancel is only possible if:**
 - `is_cancelable == true`
@@ -316,12 +318,13 @@ No fee is charged at stream creation, cancel, renounce, transfer, or burn — on
 | Explicit error handling | All error paths return typed `Error` variants; no panics |
 | Re-entrancy | Soroban's execution model prevents re-entrant calls |
 | Access control | `sender`/`recipient` roles enforced per operation |
+| Post-cancel cap | `withdrawable = min(streamed, deposited − refunded) − withdrawn`, so a canceled stream can never pay out more than what stayed in the contract |
 
 ---
 
 ## 10. Test Coverage
 
-106 tests across the workspace, all running in-process via `soroban_sdk::Env` (no network required):
+111 tests across the workspace, all running in-process via `soroban_sdk::Env` (no network required):
 
 | Module | Test file |
 |--------|-----------|
@@ -365,7 +368,40 @@ ls dist/
 
 ---
 
-## 12. Testnet Evidence (v0.2 smoke)
+## 12. Testnet Evidence
+
+### v0.2.1 smoke (2026-09-15)
+
+Lockup v0.2.1 fixes the post-cancel over-withdraw bug (see §7 step 6 and
+§9) and was redeployed to testnet and smoke-tested on **2026-09-15**. The
+comptroller was reused; the v0.2 lockup below stays live on-chain but is
+retired.
+
+- Lockup contract: `CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL`
+  https://stellar.expert/explorer/testnet/contract/CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL
+- Stream ids created by the smoke run: linear = **1**, recurring = **2**,
+  batch = **[3, 4, 5]**
+- Batch-size probe result: the largest linear `create_batch` that still fit
+  in one transaction was **30 rows** (40 rows did not fit) — unchanged
+
+#### Deploy transactions
+
+- Upload WASM: https://stellar.expert/explorer/testnet/tx/dbb131b800230cfcc951fc38d242fcc926619add7d6d4d95f30b4515e321be23
+- Deploy contract: https://stellar.expert/explorer/testnet/tx/ed2e23d178e291065e217aa1cb8f2bccf20b8ed45f439ed119fa432d1695c254
+
+#### Smoke + probe transactions
+
+- https://stellar.expert/explorer/testnet/tx/12dccbaed47d124f869d4b9a9ed1d059a9c329197759393c7771d5c75c4ed773
+- https://stellar.expert/explorer/testnet/tx/2318fe24739ca8febc79fd552e5fc3fc9dc66c74c7996785ed4164e6a70ff1f1
+- https://stellar.expert/explorer/testnet/tx/6df82d7cce91efda85decbdc1d3ca6234be3807b61b48b9dff19b5a7664b1f62
+- https://stellar.expert/explorer/testnet/tx/6f100e6b06c3d089c612c893ef9f8745fa72318bc6d2a7f546022f252bd534ff
+- https://stellar.expert/explorer/testnet/tx/946fe805255c58c82a6fd0a43241e4295f845da141a8c1e2752350610331fbaf
+- https://stellar.expert/explorer/testnet/tx/9f0fa2e70cca2a5d09e6859e9ac4b30bc326907be35c6196f3131a462fbb36be
+- https://stellar.expert/explorer/testnet/tx/a727345d0258d0dafc88e3bd1816dc203af59decda4a4c52b8fe431b3af51c1f
+- https://stellar.expert/explorer/testnet/tx/c45035463dc06cf461dae60838a0320cf010ca2792c7b78ffed8a7d500e643cd
+- https://stellar.expert/explorer/testnet/tx/db47ed15bc4fb6350a00481b6d85f2abe708584e8eadb5087999ae352c10d35f
+
+### v0.2 smoke (2026-09-14, retired lockup)
 
 Lockup v0.2 (recurring streams + atomic `create_batch`) was redeployed to
 testnet and smoke-tested on **2026-09-14**.
@@ -377,12 +413,12 @@ testnet and smoke-tested on **2026-09-14**.
 - Batch-size probe result: the largest linear `create_batch` that still fit
   in one transaction was **30 rows** (40 rows did not fit)
 
-### Deploy transactions
+#### Deploy transactions
 
 - Upload WASM: https://stellar.expert/explorer/testnet/tx/e78c775f8ee025a95d1e2d59ec5fdf57f967eb28f4f73ce90fcd4cd35ec6912f
 - Deploy contract: https://stellar.expert/explorer/testnet/tx/e07e071e7e2118cb54427a3390e5894b6c5d3e9ae1ab520d8bad9e7ee2a78e6b
 
-### Smoke + probe transactions
+#### Smoke + probe transactions
 
 - https://stellar.expert/explorer/testnet/tx/08dcfdf7a8bb28cce6b326f8245a2a41c337bd3ad451fab0a68dc32146a33ee4
 - https://stellar.expert/explorer/testnet/tx/277a1af4dd65635a973bc702844428ffe93861a493f2cc977f9acff03126ec18
