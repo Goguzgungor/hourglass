@@ -150,7 +150,7 @@ export function filterHistoryRows(rows: HistoryRow[], kinds: ActionKind[]): Hist
 
 - Row rendering (`HistoryRow.tsx`): left dot coloured by kind (reuse the stream page's `EVENT_DOT` palette, moved to `lib/dashboard/history.ts` as `KIND_COLOR`), kind label, `#id · Model` link to `/stream/{id}`, amount with token symbol (canceled: "refund X · Y left to recipient"), "by you" / counterparty, relative time (`formatTimestamp` on hover), explorer link via `txUrl`.
 - Controls: "Only my actions" toggle (`mine`), kind chips (multi-select, client-side), "Load 25 more".
-- The stream page's `EventsLog` switches to `HistoryRow` for consistent rendering (same data via `/api/streams/[id]`), keeping its timeline layout.
+- The stream page's own `EventsLog` keeps its timeline rendering in this sub-project (it already reads the indexer); unifying it with `HistoryRow` is a follow-up.
 
 ---
 
