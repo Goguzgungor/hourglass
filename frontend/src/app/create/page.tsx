@@ -234,29 +234,31 @@ export default function CreateStreamPage() {
     setConfirm(null);
     runner.start(run);
   }
-  function onContinueBatch() {
+  /** Every batch continuation (Retry / Shift / Discard-and-rebuild) needs the wallet that started the run. */
+  function batchGuard(): boolean {
     setError(null);
     if (!address) {
       setError('Connect your wallet to continue the batch.');
-      return;
+      return false;
     }
+    const current = runner.run;
+    if (current && address !== current.sender) {
+      setError(`This batch was started from ${truncAddress(current.sender)}. Switch to that account to continue.`);
+      return false;
+    }
+    return true;
+  }
+  function onContinueBatch() {
+    if (!batchGuard()) return;
     runner.resume();
   }
   function onShiftBatch() {
-    setError(null);
-    if (!address) {
-      setError('Connect your wallet to continue the batch.');
-      return;
-    }
+    if (!batchGuard()) return;
     runner.shift(900);
   }
   /** User confirmed the signed tx never landed: drop its hash and rebuild it from the same rows. */
   function onForgetBatchTx(index: number) {
-    setError(null);
-    if (!address) {
-      setError('Connect your wallet to continue the batch.');
-      return;
-    }
+    if (!batchGuard()) return;
     runner.forgetTx(index);
     runner.resume();
   }
