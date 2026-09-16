@@ -133,6 +133,16 @@ describe('runReducer', () => {
     const r = run(2);
     expect(runReducer(r, { type: 'chunk_failed', index: 7, error: { kind: 'network', message: 'x' }, pause: 'failed' })).toBe(r);
   });
+  it('an aborted run records late chunk outcomes but stays aborted', () => {
+    let r = runReducer(run(2), { type: 'chunk_status', index: 0, status: 'signing' });
+    r = runReducer(r, { type: 'abort' });
+    const done = runReducer(r, { type: 'chunk_done', index: 0, txHash: 'h', streamIds: [1, 2] });
+    expect(done.phase).toBe('aborted');
+    expect(done.chunks[0]).toMatchObject({ status: 'done', txHash: 'h' });
+    const failed = runReducer(r, { type: 'chunk_failed', index: 0, error: { kind: 'network', message: 'x' }, pause: 'failed' });
+    expect(failed.phase).toBe('aborted');
+    expect(failed.chunks[0].status).toBe('failed');
+  });
 });
 
 describe('loadStoredRun', () => {

@@ -118,11 +118,15 @@ export function runReducer(run: BatchRun, a: RunAction): BatchRun {
         streamIds: a.streamIds,
         error: undefined,
       }));
+      if (run.phase === 'aborted') return { ...run, chunks };
       const allDone = chunks.every((c) => c.status === 'done');
       return allDone ? { ...run, chunks, phase: 'completed', pauseReason: undefined } : { ...run, chunks };
     }
     case 'chunk_failed': {
       if (!run.chunks.some((c) => c.index === a.index)) return run;
+      if (run.phase === 'aborted') {
+        return { ...run, chunks: updateChunk(run, a.index, (c) => ({ ...c, status: 'failed', error: a.error, attempts: c.attempts + 1 })) };
+      }
       return {
         ...run,
         phase: 'paused',

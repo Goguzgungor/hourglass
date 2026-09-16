@@ -22,6 +22,7 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
   const [busy, setBusy] = useState(false);
   const runRef = useRef<BatchRun | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     setStored(loadStoredRun(storage));
@@ -42,11 +43,14 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
 
   const loop = useCallback(async () => {
     const lockup = getLockup();
-    if (!lockup || !runRef.current) return;
-    abortRef.current?.abort();
+    if (!lockup || !runRef.current || inFlightRef.current) return;
     const ac = new AbortController();
     abortRef.current = ac;
+    inFlightRef.current = true;
     setBusy(true);
+    // Snapshot for a loop that outlives discard(): it must see a non-running run and stop.
+    let last: BatchRun = runRef.current;
+    const alive = () => runRef.current !== null;
     try {
       await runBatch(
         {
@@ -60,13 +64,21 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
               rows: chunk.rowIds.map((id) => ({ recipient: r.rows[id].recipient, total: BigInt(r.rows[id].total) })),
             }),
           sendChunk: (tx) => sendPrepared(tx as AssembledTransaction<number[]>),
-          dispatch,
-          getRun: () => runRef.current as BatchRun,
-          persist,
+          dispatch: (a) => {
+            if (alive()) dispatch(a);
+          },
+          getRun: () => {
+            if (alive()) last = runRef.current as BatchRun;
+            return alive() ? last : { ...last, phase: 'aborted' };
+          },
+          persist: (r) => {
+            if (alive()) persist(r);
+          },
         },
         ac.signal,
       );
     } finally {
+      inFlightRef.current = false;
       if (abortRef.current === ac) setBusy(false);
     }
   }, [getLockup, dispatch, persist]);
@@ -88,7 +100,7 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
   const resume = useCallback(() => {
     dispatch({ type: 'resume' });
     sync();
-    void loop();
+    if (!inFlightRef.current) void loop();
   }, [dispatch, sync, loop]);
   const pause = useCallback(() => {
     dispatch({ type: 'pause' });
@@ -98,7 +110,7 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
     (seconds: number) => {
       dispatch({ type: 'shift_remaining', seconds });
       sync();
-      void loop();
+      if (!inFlightRef.current) void loop();
     },
     [dispatch, sync, loop],
   );
