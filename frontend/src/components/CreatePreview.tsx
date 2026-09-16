@@ -26,10 +26,16 @@ type Props = {
 const MAX_DRAWN_STEPS = 200;
 
 export default function CreatePreview({ schedule, total, recipients, recipient, symbol, glyphColor = 'bg-sand', cancelable, transferable }: Props) {
+  const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="space-y-6">
-      <EmissionSketch schedule={schedule} total={total} symbol={symbol} recipients={recipients} />
-      <SpecSheet schedule={schedule} total={total} recipients={recipients} recipient={recipient} symbol={symbol} glyphColor={glyphColor} cancelable={cancelable} transferable={transferable} />
+      <EmissionSketch schedule={schedule} total={total} symbol={symbol} recipients={recipients} nowSec={nowSec} />
+      <SpecSheet schedule={schedule} total={total} recipients={recipients} recipient={recipient} symbol={symbol} glyphColor={glyphColor} cancelable={cancelable} transferable={transferable} nowSec={nowSec} />
     </div>
   );
 }
@@ -73,13 +79,7 @@ function breakpoints(s: Schedule, total: bigint): { pts: Array<[number, number]>
   }
 }
 
-function EmissionSketch({ schedule, total, symbol, recipients }: { schedule: Schedule | null; total: bigint | null; symbol: string; recipients: number }) {
-  const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(id);
-  }, []);
-
+function EmissionSketch({ schedule, total, symbol, recipients, nowSec }: { schedule: Schedule | null; total: bigint | null; symbol: string; recipients: number; nowSec: number }) {
   const fallback: Schedule = { shape: 'linear', startTs: nowSec, cliffTs: nowSec, endTs: nowSec + 3600, unlockAtStartBps: 0, unlockAtCliffBps: 0 };
   const s = schedule ?? fallback;
   const amount = total && total > 0n ? total : 100_000_000n; // 10 XLM display fallback
@@ -149,8 +149,7 @@ function EmissionSketch({ schedule, total, symbol, recipients }: { schedule: Sch
   );
 }
 
-function SpecSheet({ schedule, total, recipients, recipient, symbol, glyphColor, cancelable, transferable }: Omit<Props, 'glyphColor'> & { glyphColor: string }) {
-  const nowSec = Math.floor(Date.now() / 1000);
+function SpecSheet({ schedule, total, recipients, recipient, symbol, glyphColor, cancelable, transferable, nowSec }: Omit<Props, 'glyphColor'> & { glyphColor: string; nowSec: number }) {
   const rows: { label: string; value: React.ReactNode; accent?: string }[] = [];
   const perRecipient = total && recipients > 1 ? null : total;
   const built = (() => {
@@ -189,7 +188,11 @@ function SpecSheet({ schedule, total, recipients, recipient, symbol, glyphColor,
         const vestingDur = schedule.endTs - schedule.cliffTs;
         const remaining = p.deposited - p.unlock_at_start - p.unlock_at_cliff;
         if (vestingDur > 0 && remaining > 0n) {
-          rows.push({ label: 'Linear rate', value: `${(Number(remaining) / vestingDur / 1e7).toFixed(7)} ${symbol} / sec`, accent: 'text-cream-muted' });
+          rows.push({
+            label: 'Linear rate',
+            value: `${formatStroops((remaining * 3600n) / BigInt(vestingDur))} ${symbol} / hour`,
+            accent: 'text-cream-muted',
+          });
         }
       }
     }
