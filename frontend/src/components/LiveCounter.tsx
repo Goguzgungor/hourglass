@@ -14,10 +14,17 @@ export type StreamShape =
   | {
       tag: 'Tranched';
       tranches: Array<{ amount: bigint; ts: number }>;
+    }
+  | {
+      tag: 'Recurring';
+      first_ts: number;
+      period_secs: number;
+      count: number;
+      amount_per_period: bigint;
     };
 
 type Props = {
-  /** Full vesting shape (Linear with optional cliff + unlocks, or Tranched). */
+  /** Full vesting shape (Linear with optional cliff + unlocks, Tranched, or Recurring). */
   shape: StreamShape;
   startTs: number;
   endTs: number;
@@ -50,8 +57,9 @@ type Props = {
  *   - at or after end:        deposited
  *
  * For Tranched: sum of tranches whose ts <= now.
+ * For Recurring: O(1) — `amount_per_period * min(count, floor((now - first) / period) + 1)`.
  */
-function streamedAtMs(
+export function streamedAtMs(
   shape: StreamShape,
   startTs: number,
   endTs: number,
@@ -75,6 +83,15 @@ function streamedAtMs(
     if (spanMs <= 0n) return deposited;
     const portion = (base * elapsedMs) / spanMs;
     return shape.unlock_at_start + shape.unlock_at_cliff + portion;
+  }
+
+  if (shape.tag === 'Recurring') {
+    const firstMs = shape.first_ts * 1000;
+    if (nowMs < firstMs) return 0n;
+    const periodMs = Math.max(1, shape.period_secs) * 1000;
+    const elapsedPeriods = Math.floor((nowMs - firstMs) / periodMs) + 1;
+    const unlocked = Math.min(shape.count, elapsedPeriods);
+    return shape.amount_per_period * BigInt(unlocked);
   }
 
   // Tranched

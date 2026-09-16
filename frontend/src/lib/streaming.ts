@@ -100,6 +100,16 @@ export function withdrawableNow(t: StreamTerms, now: number): bigint {
   return w > 0n ? w : 0n;
 }
 
+/** Share of the deposit vested at `now`, 0..1 (4-decimal precision, bigint-scaled). */
+export function streamedFraction(t: StreamTerms, now: number): number {
+  const deposited = big(t.deposited);
+  if (deposited <= 0n) return 0;
+  const streamed = streamedAmount(t, now);
+  if (streamed <= 0n) return 0;
+  if (streamed >= deposited) return 1;
+  return Number((streamed * 10_000n) / deposited) / 10_000;
+}
+
 /** Same precedence as `Stream::status` on-chain. */
 export function deriveStatus(t: StreamTerms, now: number): StreamStatus {
   if (t.is_depleted) return 'DEPLETED';

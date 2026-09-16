@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveStatus,
   streamedAmount,
+  streamedFraction,
   withdrawableNow,
   type StreamTerms,
 } from './streaming';
@@ -168,5 +169,28 @@ describe('deriveStatus', () => {
   });
   it('a single-period recurring stream is SETTLED at first_ts', () => {
     expect(deriveStatus(recurring(1), 1_000)).toBe('SETTLED');
+  });
+});
+
+describe('streamedFraction', () => {
+  const base = { withdrawn: '0', refunded: '0', was_canceled: false, is_depleted: false } as const;
+  it('linear: 0 before start, 1 after end, proportional in between', () => {
+    const t = { ...base, model: 'Linear' as const, start_ts: 1000, cliff_ts: 1000, end_ts: 2000, deposited: '1000', unlock_at_start: '0', unlock_at_cliff: '0' };
+    expect(streamedFraction(t, 999)).toBe(0);
+    expect(streamedFraction(t, 1500)).toBe(0.5);
+    expect(streamedFraction(t, 2500)).toBe(1);
+  });
+  it('tranched and recurring use the shared vesting math', () => {
+    const tr = { ...base, model: 'Tranched' as const, start_ts: 100, end_ts: 300, deposited: '400', tranches: [{ amount: '100', ts: 100 }, { amount: '300', ts: 300 }] };
+    expect(streamedFraction(tr, 200)).toBe(0.25);
+    const rc = { ...base, model: 'Recurring' as const, start_ts: 100, end_ts: 400, deposited: '400', first_ts: 100, period_secs: 100, count: 4, amount_per_period: '100' };
+    expect(streamedFraction(rc, 250)).toBe(0.5);
+    expect(streamedFraction(rc, 5000)).toBe(1);
+  });
+  it('zero deposit → 0; huge amounts do not overflow', () => {
+    const z = { ...base, model: 'Linear' as const, start_ts: 0, cliff_ts: 0, end_ts: 10, deposited: '0', unlock_at_start: '0', unlock_at_cliff: '0' };
+    expect(streamedFraction(z, 5)).toBe(0);
+    const h = { ...base, model: 'Linear' as const, start_ts: 0, cliff_ts: 0, end_ts: 4, deposited: '100000000000000000000000000', unlock_at_start: '0', unlock_at_cliff: '0' };
+    expect(streamedFraction(h, 1)).toBe(0.25);
   });
 });
