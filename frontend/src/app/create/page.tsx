@@ -215,7 +215,13 @@ export default function CreateStreamPage() {
     }
   }
   function onConfirmBatch() {
-    if (starting || !address || !schedule) return;
+    if (starting) return;
+    if (!address || !schedule) {
+      setConfirm(null);
+      setError(!address ? 'Wallet disconnected — connect it and try again.' : 'The schedule is no longer valid (the start time may have passed). Review it and try again.');
+      return;
+    }
+    setStarting(true);
     const run = planRun({
       sender: address,
       token: state.token,
@@ -226,8 +232,23 @@ export default function CreateStreamPage() {
       nowMs: Date.now(),
     });
     setConfirm(null);
-    setStarting(true);
     runner.start(run);
+  }
+  function onContinueBatch() {
+    setError(null);
+    if (!address) {
+      setError('Connect your wallet to continue the batch.');
+      return;
+    }
+    runner.resume();
+  }
+  function onShiftBatch() {
+    setError(null);
+    if (!address) {
+      setError('Connect your wallet to continue the batch.');
+      return;
+    }
+    runner.shift(900);
   }
 
   const run = runner.run;
@@ -260,15 +281,18 @@ export default function CreateStreamPage() {
             run.phase === 'completed' || run.phase === 'aborted' ? (
               <CreateResult run={run} onReset={runner.discard} />
             ) : (
-              <BatchProgress
-                run={run}
-                busy={runner.busy}
-                persisted={runner.persisted}
-                onPause={runner.pause}
-                onContinue={runner.resume}
-                onShift={() => runner.shift(900)}
-                onAbort={runner.abort}
-              />
+              <>
+                {error && <p className="mt-10 font-mono text-xs text-danger border-l-2 border-danger pl-4 py-2">{error}</p>}
+                <BatchProgress
+                  run={run}
+                  busy={runner.busy}
+                  persisted={runner.persisted}
+                  onPause={runner.pause}
+                  onContinue={onContinueBatch}
+                  onShift={onShiftBatch}
+                  onAbort={runner.abort}
+                />
+              </>
             )
           ) : (
             <form
