@@ -51,6 +51,15 @@ src/
     WalletButton.tsx    # stub button for Stage 1; wires in Stage 2
 ```
 
+## Create flow
+
+`/create` builds Linear, Tranched and Recurring streams for one recipient or a list (batch).
+
+- **Templates:** 7 built-in presets plus your own, saved in `localStorage['hourglass:templates:v1']` (max 50). A template stores a *relative* schedule (offsets in seconds, percentages in basis points), token, and flags; applying it resolves the schedule against "now" and shifts it so the start is at least 2 min (single) / 15 min (batch) ahead.
+- **Amounts** are always the total a recipient receives. Recurring amounts are floored to equal periods; the adjustment is shown per row and in the summary.
+- **Batch:** rows come from the table or from pasted / uploaded `recipient, amount` lines (comma, semicolon, tab or space separated; header and `#` lines skipped). Max 500 rows per run. Rows are chunked 20 per `create_batch` transaction (contract cap 100); a chunk that does not fit is split in half automatically. Each transaction is signed separately; progress is kept in `sessionStorage['hourglass:batchRun:v1']` so a reload offers to resume. A pre-flight Horizon balance check blocks runs that exceed the balance.
+- **Logic lives in** `src/lib/create/` (pure, unit-tested); UI in `src/components/create/`.
+
 ## Design system
 
 The Celestial Almanac palette. Treat sand as a brass accent — use it
