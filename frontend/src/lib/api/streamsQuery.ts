@@ -8,11 +8,11 @@ import { optAddress, optEnum, optEnumList, optInt, ParamError } from './params';
 
 export type SortField = 'created_at' | 'start_ts' | 'end_ts';
 export type Order = 'asc' | 'desc';
-const SORT_FIELDS = ['created_at', 'start_ts', 'end_ts'] as const;
-const ORDERS = ['asc', 'desc'] as const;
-const ROLES = ['sender', 'recipient', 'any'] as const;
-const MODELS = ['Linear', 'Tranched', 'Recurring'] as const;
-const STATUSES = ['pending', 'streaming', 'settled', 'canceled', 'depleted', 'active', 'inactive'] as const;
+export const SORT_FIELDS = ['created_at', 'start_ts', 'end_ts'] as const;
+export const ORDERS = ['asc', 'desc'] as const;
+export const ROLES = ['sender', 'recipient', 'any'] as const;
+export const MODELS = ['Linear', 'Tranched', 'Recurring'] as const;
+export const STATUSES = ['pending', 'streaming', 'settled', 'canceled', 'depleted', 'active', 'inactive'] as const;
 type StatusParam = (typeof STATUSES)[number];
 
 export interface StreamsQuery {
