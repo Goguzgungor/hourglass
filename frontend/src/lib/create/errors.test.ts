@@ -59,3 +59,33 @@ describe('classifyTxError', () => {
     expect(describeError({ kind: 'network', message: 'boom' })).toBe('boom');
   });
 });
+
+// Real vectors captured on testnet 2026-09-16 via
+// `npx tsx scripts/capture-create-errors.ts` (simulation only, no signing, no
+// secret key) against lockup CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL.
+// Both lines are the raw `Error.message`, truncated to 600 chars by the
+// script, embedded here verbatim (not re-typed from memory).
+describe('captured on testnet 2026-09-16', () => {
+  it('classifies the real StartInPast (#18) simulation failure (create_linear, start_ts 100s in the past)', () => {
+    const msg = `Transaction simulation failed: "HostError: Error(Contract, #18)
+
+Event log (newest first):
+   0: [Diagnostic Event] contract:CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, topics:[error, Error(Contract, #18)], data:"escalating error to VM trap from failed host function call: fail_with_error"
+   1: [Diagnostic Event] contract:CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, topics:[error, Error(Contract, #18)], data:["failing with contract error", 18]
+   2: [Diagnostic Event] topics:[fn_call, CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, create_linear], data:[GBX`;
+    expect(classifyTxError(new Error(msg))).toMatchObject({ kind: 'contract', code: 18, name: 'StartInPast' });
+  });
+
+  // The second capture (`create_batch` with 100 rows) failed simulation with
+  // a host-level budget error rather than returning "simulation OK" — the
+  // 100-row batch alone (before signing/sending) already exceeds Soroban's
+  // simulation resource budget. It classifies as `resource` because
+  // "ExceededLimit" is already one of `RESOURCE_RE`'s alternatives; no
+  // regex change was needed.
+  it('classifies the real batch-of-100 resource failure (create_batch, Budget ExceededLimit)', () => {
+    const msg = `Transaction simulation failed: "HostError: Error(Budget, ExceededLimit)
+DebugInfo not available
+"`;
+    expect(classifyTxError(new Error(msg)).kind).toBe('resource');
+  });
+});
