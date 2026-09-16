@@ -1,114 +1,107 @@
+// frontend/src/components/CreatePreview.tsx
 'use client';
 
 /**
- * /create preview pane — a clean, diagrammatic sketch of the vesting curve
- * + a tight spec sheet beside it. Replaces the previous live-streaming
- * StreamRiver mockup, which was confusing for a pre-submission preview.
+ * /create preview pane — a diagrammatic sketch of the vesting curve for the
+ * current schedule (linear, tranched or recurring) plus a tight spec sheet.
+ * In batch mode `total` is the grand total and `recipients` > 1.
  */
 
 import { useEffect, useState } from 'react';
-import {
-  formatDuration,
-  formatStroops,
-  truncAddress,
-} from '@/lib/format';
-
-type Parsed = {
-  depositStroops: bigint;
-  unlockStartStroops: bigint;
-  unlockCliffStroops: bigint;
-  startTs: number;
-  cliffTs: number;
-  endTs: number;
-  duration: number;
-  hasCliff: boolean;
-};
+import { buildSpec, scheduleEnd, scheduleStart, type Schedule } from '@/lib/create/schedule';
+import { formatDuration, formatStroops, truncAddress } from '@/lib/format';
 
 type Props = {
-  parsed: Parsed | null;
-  recipient: string;
+  schedule: Schedule | null;
+  /** Per-recipient total (single) or grand total (batch), stroops. */
+  total: bigint | null;
+  recipients: number;
+  recipient?: string;
   symbol: string;
   glyphColor?: string;
   cancelable: boolean;
   transferable: boolean;
 };
 
-export default function CreatePreview({
-  parsed,
-  recipient,
-  symbol,
-  glyphColor = 'bg-sand',
-  cancelable,
-  transferable,
-}: Props) {
+const MAX_DRAWN_STEPS = 200;
+
+export default function CreatePreview({ schedule, total, recipients, recipient, symbol, glyphColor = 'bg-sand', cancelable, transferable }: Props) {
   return (
     <div className="space-y-6">
-      <EmissionSketch parsed={parsed} symbol={symbol} />
-      <SpecSheet
-        parsed={parsed}
-        recipient={recipient}
-        symbol={symbol}
-        glyphColor={glyphColor}
-        cancelable={cancelable}
-        transferable={transferable}
-      />
+      <EmissionSketch schedule={schedule} total={total} symbol={symbol} recipients={recipients} />
+      <SpecSheet schedule={schedule} total={total} recipients={recipients} recipient={recipient} symbol={symbol} glyphColor={glyphColor} cancelable={cancelable} transferable={transferable} />
     </div>
   );
 }
 
-/* ---------------- Emission sketch ---------------- */
-
-function EmissionSketch({
-  parsed,
-  symbol,
-}: {
-  parsed: Parsed | null;
-  symbol: string;
-}) {
-  // Fallback values keep the sketch shaped even before the user fills the form.
-  const start = parsed?.startTs ?? Math.floor(Date.now() / 1000);
-  const end =
-    parsed && parsed.endTs > start ? parsed.endTs : start + 3600; // 1h default
-  const cliff =
-    parsed && parsed.cliffTs > start && parsed.cliffTs <= end
-      ? parsed.cliffTs
-      : start;
-  const deposit = parsed?.depositStroops ?? 10_000_000_0n; // 10 XLM display
-  const unlockStart = parsed?.unlockStartStroops ?? 0n;
-  const unlockCliff = parsed?.unlockCliffStroops ?? 0n;
-
-  // Convert to floats for SVG plotting only — won't be used for any
-  // financial math, just visual proportions.
-  const D = Number(deposit);
-  const US = Number(unlockStart);
-  const UC = Number(unlockCliff);
-  const range = end - start || 1;
-
-  // Map x in [start..end] → [0..100]
-  const x = (t: number) => Math.max(0, Math.min(100, ((t - start) / range) * 100));
-  // Map y in [0..D] → [100..0] (flip for SVG)
-  const y = (v: number) => 100 - Math.max(0, Math.min(100, (v / Math.max(D, 1)) * 100));
-
-  // Build the polyline points: (start, 0) -> jump to unlockStart -> hold to cliff -> jump by unlockCliff -> linear to deposit at end.
-  const pts: [number, number][] = [];
-  pts.push([x(start), y(0)]);
-  if (US > 0) pts.push([x(start), y(US)]);
-  if (cliff > start) {
-    pts.push([x(cliff), y(US)]);
-    if (UC > 0) pts.push([x(cliff), y(US + UC)]);
+/** Cumulative-amount breakpoints `[t, amount]` for the sketch; `step` = draw as a staircase. */
+function breakpoints(s: Schedule, total: bigint): { pts: Array<[number, number]>; step: boolean } {
+  const T = Number(total);
+  switch (s.shape) {
+    case 'linear': {
+      const us = (T * s.unlockAtStartBps) / 10_000;
+      const uc = (T * s.unlockAtCliffBps) / 10_000;
+      const pts: Array<[number, number]> = [[s.startTs, 0]];
+      if (us > 0) pts.push([s.startTs, us]);
+      if (s.cliffTs > s.startTs) {
+        pts.push([s.cliffTs, us]);
+        if (uc > 0) pts.push([s.cliffTs, us + uc]);
+      }
+      pts.push([s.endTs, T]);
+      return { pts, step: false };
+    }
+    case 'tranched': {
+      const pts: Array<[number, number]> = [[s.startTs, 0]];
+      let acc = 0;
+      for (const t of s.tranches) {
+        acc += (T * t.bps) / 10_000;
+        pts.push([t.ts, Math.min(acc, T)]);
+      }
+      return { pts, step: true };
+    }
+    case 'recurring': {
+      const per = T / s.count;
+      const n = Math.min(s.count, MAX_DRAWN_STEPS);
+      const stride = s.count / n;
+      const pts: Array<[number, number]> = [[s.firstTs, 0]];
+      for (let i = 0; i < n; i++) {
+        const k = Math.min(s.count - 1, Math.round((i + 1) * stride) - 1);
+        pts.push([s.firstTs + k * s.periodSecs, per * (k + 1)]);
+      }
+      return { pts, step: true };
+    }
   }
-  pts.push([x(end), y(D)]);
+}
 
-  const linePath = pts.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
-  // Area: same path + close down to baseline
-  const areaPath = `${linePath} L ${x(end)} 100 L ${x(start)} 100 Z`;
-
-  // Live "now" position
+function EmissionSketch({ schedule, total, symbol, recipients }: { schedule: Schedule | null; total: bigint | null; symbol: string; recipients: number }) {
   const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(id);
   }, []);
+
+  const fallback: Schedule = { shape: 'linear', startTs: nowSec, cliffTs: nowSec, endTs: nowSec + 3600, unlockAtStartBps: 0, unlockAtCliffBps: 0 };
+  const s = schedule ?? fallback;
+  const amount = total && total > 0n ? total : 100_000_000n; // 10 XLM display fallback
+  const start = scheduleStart(s);
+  const end = Math.max(scheduleEnd(s), start + 1);
+  const { pts, step } = breakpoints(s, amount);
+  const D = Number(amount);
+  const range = end - start || 1;
+  const x = (t: number) => Math.max(0, Math.min(100, ((t - start) / range) * 100));
+  const y = (v: number) => 100 - Math.max(0, Math.min(100, (v / Math.max(D, 1)) * 100));
+
+  let d = '';
+  pts.forEach(([t, v], i) => {
+    if (i === 0) {
+      d += `M ${x(t)} ${y(v)}`;
+      return;
+    }
+    if (step) d += ` L ${x(t)} ${y(pts[i - 1][1])}`;
+    d += ` L ${x(t)} ${y(v)}`;
+  });
+  const areaPath = `${d} L ${x(end)} 100 L ${x(start)} 100 Z`;
+  const cliff = s.shape === 'linear' && s.cliffTs > s.startTs ? s.cliffTs : null;
   const nowInWindow = nowSec >= start && nowSec <= end;
 
   return (
@@ -120,116 +113,56 @@ function EmissionSketch({
             <stop offset="100%" stopColor="var(--sand)" stopOpacity="0" />
           </linearGradient>
         </defs>
-
-        {/* Horizontal gridlines at 25/50/75 */}
         {[25, 50, 75].map((v) => (
-          <line
-            key={v}
-            x1="0"
-            x2="100"
-            y1={v}
-            y2={v}
-            stroke="var(--stroke)"
-            strokeOpacity="0.4"
-            strokeWidth="0.3"
-            vectorEffect="non-scaling-stroke"
-          />
+          <line key={v} x1="0" x2="100" y1={v} y2={v} stroke="var(--stroke)" strokeOpacity="0.4" strokeWidth="0.3" vectorEffect="non-scaling-stroke" />
         ))}
-
-        {/* Cliff guideline */}
-        {cliff > start && (
-          <line
-            x1={x(cliff)}
-            x2={x(cliff)}
-            y1="0"
-            y2="100"
-            stroke="var(--violet)"
-            strokeWidth="0.5"
-            strokeDasharray="2 2"
-            vectorEffect="non-scaling-stroke"
-            opacity="0.6"
-          />
+        {cliff !== null && (
+          <line x1={x(cliff)} x2={x(cliff)} y1="0" y2="100" stroke="var(--violet)" strokeWidth="0.5" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" opacity="0.6" />
         )}
-
-        {/* Area fill */}
         <path d={areaPath} fill="url(#emissionFill)" />
-        {/* Curve */}
-        <path
-          d={linePath}
-          fill="none"
-          stroke="var(--sand-bright)"
-          strokeWidth="1.5"
-          vectorEffect="non-scaling-stroke"
-          strokeLinejoin="miter"
-          strokeLinecap="square"
-        />
-
-        {/* Now guideline (only when we're inside the window) */}
+        <path d={d} fill="none" stroke="var(--sand-bright)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinejoin="miter" strokeLinecap="square" />
         {nowInWindow && (
-          <line
-            x1={x(nowSec)}
-            x2={x(nowSec)}
-            y1="0"
-            y2="100"
-            stroke="var(--teal-bright)"
-            strokeWidth="0.6"
-            vectorEffect="non-scaling-stroke"
-            opacity="0.8"
-          />
+          <line x1={x(nowSec)} x2={x(nowSec)} y1="0" y2="100" stroke="var(--teal-bright)" strokeWidth="0.6" vectorEffect="non-scaling-stroke" opacity="0.8" />
         )}
       </svg>
-
-      {/* X-axis labels */}
       <div className="flex justify-between px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-cream-dim border-t border-stroke/60">
         <span>
-          <span className="text-sand">Start</span>{' '}
-          <span className="text-cream-dim/60">{relativeFromNow(start)}</span>
+          <span className="text-sand">Start</span> <span className="text-cream-dim/60">{relativeFromNow(start, nowSec)}</span>
         </span>
-        {cliff > start && (
+        {cliff !== null && (
           <span>
-            <span className="text-violet">Cliff</span>{' '}
-            <span className="text-cream-dim/60">{relativeFromNow(cliff)}</span>
+            <span className="text-violet">Cliff</span> <span className="text-cream-dim/60">{relativeFromNow(cliff, nowSec)}</span>
           </span>
         )}
         <span>
-          <span className="text-cream">End</span>{' '}
-          <span className="text-cream-dim/60">{relativeFromNow(end)}</span>
+          <span className="text-cream">End</span> <span className="text-cream-dim/60">{relativeFromNow(end, nowSec)}</span>
         </span>
       </div>
-
-      {/* Y-axis caption (deposit at top of curve) */}
       <div className="px-3 pb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-cream-dim/80">
-        {parsed
-          ? `Recipient claims up to ${formatStroops(deposit)} ${symbol} by End`
+        {schedule && total
+          ? recipients > 1
+            ? `${recipients} recipients claim ${formatStroops(total)} ${symbol} in total by End`
+            : `Recipient claims up to ${formatStroops(total)} ${symbol} by End`
           : 'Fill the form to render the schedule.'}
       </div>
     </div>
   );
 }
 
-/* ---------------- Spec sheet ---------------- */
-
-function SpecSheet({
-  parsed,
-  recipient,
-  symbol,
-  glyphColor,
-  cancelable,
-  transferable,
-}: {
-  parsed: Parsed | null;
-  recipient: string;
-  symbol: string;
-  glyphColor: string;
-  cancelable: boolean;
-  transferable: boolean;
-}) {
+function SpecSheet({ schedule, total, recipients, recipient, symbol, glyphColor, cancelable, transferable }: Omit<Props, 'glyphColor'> & { glyphColor: string }) {
+  const nowSec = Math.floor(Date.now() / 1000);
   const rows: { label: string; value: React.ReactNode; accent?: string }[] = [];
+  const perRecipient = total && recipients > 1 ? null : total;
+  const built = (() => {
+    if (!schedule || !perRecipient) return null;
+    try {
+      return buildSpec(schedule, perRecipient);
+    } catch {
+      return null;
+    }
+  })();
 
-  rows.push({
-    label: 'To',
-    value: recipient ? truncAddress(recipient) : '—',
-  });
+  rows.push({ label: 'To', value: recipients > 1 ? `${recipients} recipients` : recipient ? truncAddress(recipient) : '—' });
   rows.push({
     label: 'Token',
     value: (
@@ -239,108 +172,60 @@ function SpecSheet({
       </span>
     ),
   });
-  rows.push({
-    label: 'Deposit',
-    value: parsed
-      ? `${formatStroops(parsed.depositStroops)} ${symbol}`
-      : '—',
-    accent: 'text-sand-bright',
-  });
-  rows.push({
-    label: 'Duration',
-    value:
-      parsed && parsed.duration > 0 ? formatDuration(parsed.duration) : '—',
-    accent: 'text-teal-bright',
-  });
-
-  if (parsed) {
-    const starts = relativeFromNow(parsed.startTs);
-    rows.push({
-      label: 'Starts',
-      value: starts,
-      accent: 'text-cream',
-    });
-    rows.push({
-      label: 'Cliff',
-      value:
-        parsed.hasCliff && parsed.cliffTs > parsed.startTs
-          ? `at ${relativeFromNow(parsed.cliffTs)}`
-          : 'none',
-      accent:
-        parsed.hasCliff && parsed.cliffTs > parsed.startTs
-          ? 'text-violet'
-          : 'text-cream-dim',
-    });
-    if (parsed.unlockStartStroops > 0n) {
-      rows.push({
-        label: 'Unlock @ start',
-        value: `${formatStroops(parsed.unlockStartStroops)} ${symbol}`,
-      });
+  rows.push({ label: recipients > 1 ? 'Total' : 'Deposit', value: total ? `${formatStroops(total)} ${symbol}` : '—', accent: 'text-sand-bright' });
+  rows.push({ label: 'Shape', value: schedule ? schedule.shape : '—' });
+  if (schedule) {
+    const start = scheduleStart(schedule);
+    const end = scheduleEnd(schedule);
+    rows.push({ label: 'Starts', value: relativeFromNow(start, nowSec), accent: 'text-cream' });
+    rows.push({ label: 'Duration', value: end > start ? formatDuration(end - start) : '—', accent: 'text-teal-bright' });
+    if (schedule.shape === 'linear') {
+      const hasCliff = schedule.cliffTs > schedule.startTs;
+      rows.push({ label: 'Cliff', value: hasCliff ? `at ${relativeFromNow(schedule.cliffTs, nowSec)}` : 'none', accent: hasCliff ? 'text-violet' : 'text-cream-dim' });
+      if (schedule.unlockAtStartBps > 0) rows.push({ label: 'Unlock @ start', value: `${schedule.unlockAtStartBps / 100}%` });
+      if (schedule.unlockAtCliffBps > 0) rows.push({ label: 'Unlock @ cliff', value: `${schedule.unlockAtCliffBps / 100}%` });
+      if (built && built.spec.tag === 'Linear') {
+        const p = built.spec.values[0];
+        const vestingDur = schedule.endTs - schedule.cliffTs;
+        const remaining = p.deposited - p.unlock_at_start - p.unlock_at_cliff;
+        if (vestingDur > 0 && remaining > 0n) {
+          rows.push({ label: 'Linear rate', value: `${(Number(remaining) / vestingDur / 1e7).toFixed(7)} ${symbol} / sec`, accent: 'text-cream-muted' });
+        }
+      }
     }
-    if (parsed.unlockCliffStroops > 0n) {
-      rows.push({
-        label: 'Unlock @ cliff',
-        value: `${formatStroops(parsed.unlockCliffStroops)} ${symbol}`,
-      });
+    if (schedule.shape === 'tranched') {
+      rows.push({ label: 'Tranches', value: String(schedule.tranches.length) });
+      if (built && built.spec.tag === 'Tranched') {
+        const t = built.spec.values[0].tranches;
+        rows.push({ label: 'First / last', value: `${formatStroops(t[0].amount)} / ${formatStroops(t[t.length - 1].amount)} ${symbol}` });
+      }
     }
-
-    // Linear rate caption — only meaningful if there's a vesting window
-    const vestingDur = parsed.endTs - parsed.cliffTs;
-    const remaining =
-      parsed.depositStroops -
-      parsed.unlockStartStroops -
-      parsed.unlockCliffStroops;
-    if (vestingDur > 0 && remaining > 0n) {
-      // Show as decimal per second, with enough precision to be readable.
-      const ratePerSec = Number(remaining) / vestingDur / 1e7;
-      rows.push({
-        label: 'Linear rate',
-        value: `${ratePerSec.toFixed(7)} ${symbol} / sec`,
-        accent: 'text-cream-muted',
-      });
+    if (schedule.shape === 'recurring') {
+      rows.push({ label: 'Every', value: formatDuration(schedule.periodSecs) });
+      rows.push({ label: 'Count', value: String(schedule.count) });
+      if (built && built.spec.tag === 'Recurring') {
+        rows.push({ label: 'Per period', value: `${formatStroops(built.spec.values[0].amount_per_period)} ${symbol}` });
+        if (built.adjustment < 0n) rows.push({ label: 'Adjusted', value: `${formatStroops(built.adjustment)} ${symbol}`, accent: 'text-cream-dim' });
+      }
     }
   }
-
-  rows.push({
-    label: 'Cancelable',
-    value: cancelable ? 'Yes' : 'No',
-    accent: cancelable ? 'text-sand-bright' : 'text-cream-dim',
-  });
-  rows.push({
-    label: 'Transferable',
-    value: transferable ? 'Yes' : 'No',
-    accent: transferable ? 'text-violet' : 'text-cream-dim',
-  });
+  rows.push({ label: 'Cancelable', value: cancelable ? 'Yes' : 'No', accent: cancelable ? 'text-sand-bright' : 'text-cream-dim' });
+  rows.push({ label: 'Transferable', value: transferable ? 'Yes' : 'No', accent: transferable ? 'text-violet' : 'text-cream-dim' });
 
   return (
     <dl className="divide-y divide-stroke/40 text-[11px]">
       {rows.map((r, i) => (
-        <div
-          key={`${r.label}-${i}`}
-          className="flex items-center justify-between py-2"
-        >
-          <dt className="font-mono uppercase tracking-[0.16em] text-[9px] text-cream-dim">
-            {r.label}
-          </dt>
-          <dd
-            className={
-              'font-mono text-right max-w-[60%] truncate ' +
-              (r.accent || 'text-cream')
-            }
-          >
-            {r.value}
-          </dd>
+        <div key={`${r.label}-${i}`} className="flex items-center justify-between py-2">
+          <dt className="font-mono uppercase tracking-[0.16em] text-[9px] text-cream-dim">{r.label}</dt>
+          <dd className={'font-mono text-right max-w-[60%] truncate ' + (r.accent || 'text-cream')}>{r.value}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
-/* ---------------- Helpers ---------------- */
-
-function relativeFromNow(ts: number): string {
-  const now = Math.floor(Date.now() / 1000);
-  const delta = ts - now;
+function relativeFromNow(ts: number, nowSec: number): string {
+  const delta = ts - nowSec;
   if (Math.abs(delta) < 5) return 'now';
   if (delta < 0) return `${formatShortDuration(-delta)} ago`;
   return `in ${formatShortDuration(delta)}`;

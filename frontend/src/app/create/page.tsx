@@ -378,14 +378,7 @@ export default function CreateStreamPage() {
         {/* Right-side preview pane — md+ only */}
         <aside className="hidden md:block md:sticky md:top-32">
           <p className="eyebrow text-cream-dim mb-4">· Preview</p>
-          <CreatePreview
-            parsed={parsed.ok ? parsed : null}
-            recipient={recipient}
-            symbol={symbol}
-            glyphColor={selectedToken?.glyphColor}
-            cancelable={cancelable}
-            transferable={transferable}
-          />
+          <CreatePreview schedule={null} total={null} recipients={1} recipient={recipient} symbol={symbol} glyphColor={selectedToken?.glyphColor} cancelable={cancelable} transferable={transferable} />
           <p className="mt-5 text-[11px] text-cream-dim/80 leading-relaxed">
             Curve sketch + spec sheet update live as you edit. The recipient
             will see exactly this schedule on-chain.
