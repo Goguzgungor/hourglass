@@ -13,6 +13,8 @@ type Props = {
   onPause: () => void;
   onContinue: () => void;
   onShift: () => void;
+  /** "Discard this transaction and rebuild" for a failed chunk that still carries a tx hash. */
+  onForgetTx: (index: number) => void;
   onAbort: () => void;
 };
 
@@ -25,13 +27,14 @@ const STATUS_LABEL: Record<Chunk['status'], string> = {
   failed: 'failed',
 };
 
-function stepText(run: BatchRun): string {
+function stepText(run: BatchRun, unresolved: boolean): string {
   const p = runProgress(run);
   const active = run.chunks.find((c) => c.status === 'simulating' || c.status === 'signing' || c.status === 'submitting');
   if (run.phase === 'running' && active) {
     return `Transaction ${active.index + 1} of ${p.total} — ${active.rowIds.length} streams — ${STATUS_LABEL[active.status]}`;
   }
   if (run.phase === 'paused') {
+    if (unresolved) return 'A transaction was signed but its result is not known yet. Check it before continuing.';
     switch (run.pauseReason) {
       case 'rejected':
         return 'Signature rejected. Nothing was sent for this transaction.';
@@ -46,10 +49,11 @@ function stepText(run: BatchRun): string {
   return `${p.done} of ${p.total} transactions done — ${p.streams} streams created.`;
 }
 
-export default function BatchProgress({ run, busy, persisted, onPause, onContinue, onShift, onAbort }: Props) {
+export default function BatchProgress({ run, busy, persisted, onPause, onContinue, onShift, onForgetTx, onAbort }: Props) {
   const p = runProgress(run);
   const failed = run.chunks.find((c) => c.status === 'failed');
-  const interrupted = failed?.error?.message.startsWith('Interrupted');
+  // Signed and possibly sent: the runner looks the tx up before anything is rebuilt.
+  const unresolved = !!failed?.txHash;
   const explorerAccount = accountUrl(run.sender);
   const shiftedCount = run.chunks.filter((c) => c.status !== 'done').reduce((n, c) => n + c.rowIds.length, 0);
 
@@ -58,7 +62,7 @@ export default function BatchProgress({ run, busy, persisted, onPause, onContinu
       <div>
         <p className="eyebrow text-cream-dim mb-2">· Creating {Object.keys(run.rows).length} streams</p>
         <p className="font-mono text-sm text-cream" aria-live="polite">
-          {stepText(run)}
+          {stepText(run, unresolved)}
         </p>
         {!persisted && <p className="mt-2 text-xs text-warning">Progress will not survive a page reload in this browser.</p>}
         <p className="mt-2 text-xs text-cream-dim/80">Each transaction is signed separately. Streams created by a signed transaction are final.</p>
@@ -111,7 +115,12 @@ export default function BatchProgress({ run, busy, persisted, onPause, onContinu
         )}
         {run.phase === 'paused' && run.pauseReason !== 'start_in_past' && (
           <button type="button" className={secondaryButtonClass} onClick={onContinue}>
-            {run.pauseReason === 'user' ? 'Continue' : 'Retry'}
+            {unresolved ? 'Check transaction and continue' : run.pauseReason === 'user' ? 'Continue' : 'Retry'}
+          </button>
+        )}
+        {run.phase === 'paused' && failed && unresolved && (
+          <button type="button" className={ghostButtonClass} onClick={() => onForgetTx(failed.index)}>
+            Discard this transaction and rebuild
           </button>
         )}
         {run.phase !== 'completed' && (
@@ -121,20 +130,21 @@ export default function BatchProgress({ run, busy, persisted, onPause, onContinu
         )}
       </div>
 
-      {interrupted && (
+      {unresolved && (
         <p className="text-xs text-warning">
-          This transaction may have been sent before the page closed. Check the sender account on the explorer
+          Transaction {(failed?.index ?? 0) + 1} was signed and may have reached the network. &ldquo;Check transaction and continue&rdquo; looks it
+          up and carries on from its result; only discard it if the explorer
           {explorerAccount && (
             <>
               {' '}
               (
               <a href={explorerAccount} target="_blank" rel="noreferrer" className="underline">
-                open
+                sender account
               </a>
               )
             </>
           )}{' '}
-          before retrying, or the streams could be created twice.
+          shows it never landed — rebuilding a landed transaction would create the streams twice.
         </p>
       )}
     </section>

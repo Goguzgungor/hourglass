@@ -133,6 +133,28 @@ describe('runReducer', () => {
     const r = run(2);
     expect(runReducer(r, { type: 'chunk_failed', index: 7, error: { kind: 'network', message: 'x' }, pause: 'failed' })).toBe(r);
   });
+  it('chunk_submitting records the hash before the send; a later failure keeps it', () => {
+    let r = runReducer(run(3), { type: 'chunk_status', index: 0, status: 'signing' });
+    r = runReducer(r, { type: 'chunk_submitting', index: 0, txHash: 'h0' });
+    expect(r.chunks[0]).toMatchObject({ status: 'submitting', txHash: 'h0' });
+    expect(r.phase).toBe('running');
+    expect(runReducer(r, { type: 'chunk_submitting', index: 9, txHash: 'x' })).toBe(r);
+    r = runReducer(r, { type: 'chunk_failed', index: 0, error: { kind: 'network', message: 'x' }, pause: 'failed' });
+    expect(r.chunks[0]).toMatchObject({ status: 'failed', txHash: 'h0', attempts: 1 });
+  });
+  it('chunk_forget_tx clears the hash and error of a failed chunk only', () => {
+    let r = runReducer(run(3), { type: 'chunk_submitting', index: 0, txHash: 'h0' });
+    expect(runReducer(r, { type: 'chunk_forget_tx', index: 0 })).toBe(r); // submitting, not failed
+    expect(runReducer(r, { type: 'chunk_forget_tx', index: 9 })).toBe(r);
+    r = runReducer(r, { type: 'chunk_failed', index: 0, error: { kind: 'network', message: 'x' }, pause: 'failed' });
+    const forgotten = runReducer(r, { type: 'chunk_forget_tx', index: 0 });
+    expect(forgotten.chunks[0]).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(forgotten.chunks[0].txHash).toBeUndefined();
+    expect(forgotten.chunks[0].error).toBeUndefined();
+    expect(forgotten.phase).toBe('paused'); // the user still has to continue
+    const done = runReducer(r, { type: 'chunk_done', index: 0, txHash: 'h0', streamIds: [1] });
+    expect(runReducer(done, { type: 'chunk_forget_tx', index: 0 })).toBe(done);
+  });
   it('an aborted run records late chunk outcomes but stays aborted', () => {
     let r = runReducer(run(2), { type: 'chunk_status', index: 0, status: 'signing' });
     r = runReducer(r, { type: 'abort' });
@@ -155,19 +177,22 @@ describe('loadStoredRun', () => {
     s.setItem(BATCH_RUN_KEY, JSON.stringify(runReducer(run(2), { type: 'abort' })));
     expect(loadStoredRun(s)).toBeNull();
   });
-  it('normalises an interrupted run: running → paused, in-flight chunks reset', () => {
+  it('normalises an interrupted run: running → paused; signing/simulating → pending; submitting → failed with its hash', () => {
     const s = memoryStorage();
-    let r = run(45);
+    let r = run(65); // 20/20/20/5
     r = runReducer(r, { type: 'chunk_done', index: 0, txHash: 'h', streamIds: [1] });
     r = runReducer(r, { type: 'chunk_status', index: 1, status: 'signing' });
     r = runReducer(r, { type: 'chunk_status', index: 2, status: 'simulating' });
+    r = runReducer(r, { type: 'chunk_submitting', index: 3, txHash: 'h3' });
     s.setItem(BATCH_RUN_KEY, JSON.stringify(r));
     const loaded = loadStoredRun(s)!;
     expect(loaded.phase).toBe('paused');
     expect(loaded.pauseReason).toBe('failed');
     expect(loaded.chunks[0].status).toBe('done');
-    expect(loaded.chunks[1]).toMatchObject({ status: 'failed', error: INTERRUPTED_ERROR });
+    expect(loaded.chunks[1].status).toBe('pending'); // the wallet signs, we submit: nothing was sent
+    expect(loaded.chunks[1].txHash).toBeUndefined();
     expect(loaded.chunks[2].status).toBe('pending');
+    expect(loaded.chunks[3]).toMatchObject({ status: 'failed', txHash: 'h3', error: INTERRUPTED_ERROR });
   });
   it('keeps completed and paused runs as they are', () => {
     const s = memoryStorage();

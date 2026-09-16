@@ -1,9 +1,12 @@
 //
 // The only place that talks to the lockup client for creation. Single mode
-// calls the shape-specific method; batch mode prepares/sends create_batch.
+// calls the shape-specific method; batch mode prepares, signs and sends
+// create_batch as separate steps (and can look a sent one up by hash).
 
+import { rpc, type xdr } from '@stellar/stellar-sdk';
 import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import type { CreateRow, CreateSpec, LockupClient } from '@/lib/sdk';
+import type { ChunkResolution } from './runner';
 import { buildSpec, type BuiltSpec, type Schedule } from './schedule';
 
 type Flags = { cancelable: boolean; transferable: boolean };
@@ -83,9 +86,38 @@ export async function prepareBatch(
   return tx;
 }
 
-export async function sendPrepared(
-  tx: AssembledTransaction<number[]>,
-): Promise<{ txHash: string; streamIds: number[] }> {
-  const sent = await tx.signAndSend();
+/**
+ * Sign a prepared batch in the wallet (throws on rejection). Returns the hash
+ * the network will know the transaction by, so the runner can record it
+ * BEFORE sending: a send that throws after the network accepted the tx must
+ * be looked up, never re-signed.
+ */
+export async function signPrepared(tx: AssembledTransaction<number[]>): Promise<{ txHash: string }> {
+  await tx.sign();
+  return { txHash: tx.signed ? tx.signed.hash().toString('hex') : '' };
+}
+
+/** Send an already-signed batch and wait for it to land. */
+export async function sendSigned(tx: AssembledTransaction<number[]>): Promise<{ txHash: string; streamIds: number[] }> {
+  const sent = await tx.send();
   return { txHash: txHashOf(sent), streamIds: [...sent.result] };
+}
+
+/** `rpc.Server#getTransaction`, narrowed to what `resolveBatchTx` reads. */
+export type TxLookup = (hash: string) => Promise<{ status: rpc.Api.GetTransactionStatus; returnValue?: xdr.ScVal }>;
+
+/**
+ * Look up a create_batch transaction that was signed earlier (the send threw
+ * after submission, or the page was closed mid-submit). Decodes the created
+ * stream ids from the on-chain return value when it succeeded. `getTx` is
+ * injected so this stays free of network construction.
+ */
+export async function resolveBatchTx(lockup: LockupClient, txHash: string, getTx: TxLookup): Promise<ChunkResolution> {
+  const r = await getTx(txHash);
+  if (r.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+    const ids = r.returnValue ? (lockup.spec.funcResToNative('create_batch', r.returnValue) as number[]) : [];
+    return { status: 'success', streamIds: [...ids] };
+  }
+  if (r.status === rpc.Api.GetTransactionStatus.FAILED) return { status: 'failed' };
+  return { status: 'not_found' };
 }

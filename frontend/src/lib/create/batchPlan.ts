@@ -53,6 +53,10 @@ export type RunAction =
   | { type: 'chunk_status'; index: number; status: ChunkStatus }
   | { type: 'chunk_done'; index: number; txHash: string; streamIds: number[] }
   | { type: 'chunk_failed'; index: number; error: ClassifiedError; pause: PauseReason }
+  /** Signed; the hash is known before the send so a landed tx is never re-signed. */
+  | { type: 'chunk_submitting'; index: number; txHash: string }
+  /** "Discard this transaction and rebuild": drop a failed chunk's hash and start over. */
+  | { type: 'chunk_forget_tx'; index: number }
   | { type: 'split_chunk'; index: number }
   | { type: 'shift_remaining'; seconds: number }
   | { type: 'resume' }
@@ -134,6 +138,14 @@ export function runReducer(run: BatchRun, a: RunAction): BatchRun {
         chunks: updateChunk(run, a.index, (c) => ({ ...c, status: 'failed', error: a.error, attempts: c.attempts + 1 })),
       };
     }
+    case 'chunk_submitting':
+      if (!run.chunks.some((c) => c.index === a.index)) return run;
+      return { ...run, chunks: updateChunk(run, a.index, (c) => ({ ...c, status: 'submitting', txHash: a.txHash })) };
+    case 'chunk_forget_tx': {
+      const c = run.chunks.find((x) => x.index === a.index);
+      if (!c || c.status !== 'failed') return run;
+      return { ...run, chunks: updateChunk(run, a.index, (x) => ({ ...x, status: 'pending', txHash: undefined, error: undefined })) };
+    }
     case 'split_chunk': {
       const i = run.chunks.findIndex((c) => c.index === a.index);
       if (i === -1) return run;
@@ -213,10 +225,11 @@ export function isBatchRun(x: unknown): x is BatchRun {
 
 /**
  * Read the persisted run. Aborted / unreadable → null. A run that was
- * `running` when the tab closed becomes `paused`; a chunk caught mid-signature
- * becomes `failed` with `INTERRUPTED_ERROR` so the UI asks the user to check
- * the explorer before retrying; a chunk that was only simulating goes back to
- * `pending`.
+ * `running` when the tab closed becomes `paused`. A chunk that was only
+ * simulating or waiting for the wallet's signature goes back to `pending`
+ * (nothing was sent: the wallet signs, we submit); a chunk caught while
+ * submitting becomes `failed` with `INTERRUPTED_ERROR` and keeps its hash so
+ * the runner looks the transaction up before anything is rebuilt.
  */
 export function loadStoredRun(storage: StorageLike | null): BatchRun | null {
   const raw = readJson<unknown>(storage, BATCH_RUN_KEY);
@@ -224,8 +237,8 @@ export function loadStoredRun(storage: StorageLike | null): BatchRun | null {
   if (raw.phase === 'aborted') return null;
   if (raw.phase === 'completed') return raw;
   const chunks = raw.chunks.map((c): Chunk => {
-    if (c.status === 'simulating') return { ...c, status: 'pending' };
-    if (c.status === 'signing' || c.status === 'submitting') return { ...c, status: 'failed', error: INTERRUPTED_ERROR };
+    if (c.status === 'simulating' || c.status === 'signing') return { ...c, status: 'pending' };
+    if (c.status === 'submitting') return { ...c, status: 'failed', error: INTERRUPTED_ERROR };
     return c;
   });
   return {

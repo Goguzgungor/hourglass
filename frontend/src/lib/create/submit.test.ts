@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { rpc, xdr } from '@stellar/stellar-sdk';
 import type { LockupClient } from '@/lib/sdk';
 import type { Schedule } from './schedule';
-import { prepareBatch, sendPrepared, submitSingle, toCreateRow, txHashOf } from './submit';
+import { prepareBatch, resolveBatchTx, sendSigned, signPrepared, submitSingle, toCreateRow, txHashOf } from './submit';
 import { buildSpec } from './schedule';
 
 const G1 = 'GBXDHEVCWZCP45D5VCBLYEQFX33DTHULU6KMH5YPJ54XXOJ6DO2P3MU2';
@@ -13,7 +14,17 @@ const recurring: Schedule = { shape: 'recurring', firstTs: NOW + 900, periodSecs
 
 function fakeLockup(result: unknown, hash = 'deadbeef') {
   const calls: Array<{ method: string; args: unknown }> = [];
-  const tx = { signAndSend: async () => ({ result, sendTransactionResponse: { hash } }) };
+  const tx = {
+    signed: undefined as undefined | { hash: () => Buffer },
+    signAndSend: async () => ({ result, sendTransactionResponse: { hash } }),
+    async sign() {
+      this.signed = { hash: () => Buffer.from(hash, 'hex') };
+    },
+    async send() {
+      if (!this.signed) throw new Error('The transaction has not yet been signed.');
+      return { result, sendTransactionResponse: { hash } };
+    },
+  };
   const mk = (method: string) => async (args: unknown) => {
     calls.push({ method, args });
     return tx;
@@ -54,7 +65,7 @@ describe('submitSingle', () => {
   });
 });
 
-describe('prepareBatch / sendPrepared / toCreateRow', () => {
+describe('prepareBatch / signPrepared / sendSigned / toCreateRow', () => {
   it('builds one CreateRow per row with the shared flags and schedule', async () => {
     const { client, calls, tx } = fakeLockup([11, 12]);
     const prepared = await prepareBatch(client, {
@@ -70,7 +81,16 @@ describe('prepareBatch / sendPrepared / toCreateRow', () => {
       toCreateRow(G1, buildSpec(recurring, 40n), { cancelable: true, transferable: false }),
     ]);
     expect((args.rows[0] as { spec: { tag: string } }).spec.tag).toBe('Recurring');
-    expect(await sendPrepared(prepared)).toEqual({ txHash: 'deadbeef', streamIds: [11, 12] });
+    // sign first (hash known before anything is sent), then send
+    await expect(sendSigned(prepared)).rejects.toThrow(/not yet been signed/);
+    expect(await signPrepared(prepared)).toEqual({ txHash: 'deadbeef' });
+    expect(await sendSigned(prepared)).toEqual({ txHash: 'deadbeef', streamIds: [11, 12] });
+  });
+  it('signPrepared propagates a wallet rejection and reports an empty hash when nothing was signed', async () => {
+    const rejecting = { sign: async () => { throw new Error('User rejected the request'); }, signed: undefined };
+    await expect(signPrepared(rejecting as unknown as Parameters<typeof signPrepared>[0])).rejects.toThrow(/rejected/);
+    const silent = { sign: async () => {}, signed: undefined };
+    expect(await signPrepared(silent as unknown as Parameters<typeof signPrepared>[0])).toEqual({ txHash: '' });
   });
   it('txHashOf falls back to getTransactionResponse.txHash then empty', () => {
     expect(txHashOf({ sendTransactionResponse: { hash: 'a' } })).toBe('a');
@@ -90,5 +110,35 @@ describe('prepareBatch / sendPrepared / toCreateRow', () => {
     await expect(
       prepareBatch(client, { sender: G1, token: 'C', schedule: recurring, cancelable: true, transferable: true, rows: [{ recipient: G2, total: 100n }] }),
     ).rejects.toBe(boom);
+  });
+});
+
+describe('resolveBatchTx', () => {
+  const returnValue = xdr.ScVal.scvVoid(); // stands in for the on-chain Vec<u32>; decoding is the spec's job
+  const decoded: Array<{ name: string; val: unknown }> = [];
+  const lockup = {
+    spec: {
+      funcResToNative: (name: string, val: unknown) => {
+        decoded.push({ name, val });
+        return [21, 22];
+      },
+    },
+  } as unknown as LockupClient;
+  const answer = (r: { status: rpc.Api.GetTransactionStatus; returnValue?: xdr.ScVal }) => async (hash: string) => {
+    expect(hash).toBe('abc');
+    return r;
+  };
+  it('SUCCESS → decodes the stream ids through the create_batch spec', async () => {
+    decoded.length = 0;
+    expect(await resolveBatchTx(lockup, 'abc', answer({ status: rpc.Api.GetTransactionStatus.SUCCESS, returnValue }))).toEqual({ status: 'success', streamIds: [21, 22] });
+    expect(decoded).toEqual([{ name: 'create_batch', val: returnValue }]);
+  });
+  it('SUCCESS without a return value → success with no ids', async () => {
+    expect(await resolveBatchTx(lockup, 'abc', answer({ status: rpc.Api.GetTransactionStatus.SUCCESS }))).toEqual({ status: 'success', streamIds: [] });
+  });
+  it('FAILED → failed; NOT_FOUND → not_found; an RPC error propagates', async () => {
+    expect(await resolveBatchTx(lockup, 'abc', answer({ status: rpc.Api.GetTransactionStatus.FAILED }))).toEqual({ status: 'failed' });
+    expect(await resolveBatchTx(lockup, 'abc', answer({ status: rpc.Api.GetTransactionStatus.NOT_FOUND }))).toEqual({ status: 'not_found' });
+    await expect(resolveBatchTx(lockup, 'abc', async () => { throw new Error('Failed to fetch'); })).rejects.toThrow('Failed to fetch');
   });
 });

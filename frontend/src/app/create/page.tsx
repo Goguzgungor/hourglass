@@ -250,6 +250,16 @@ export default function CreateStreamPage() {
     }
     runner.shift(900);
   }
+  /** User confirmed the signed tx never landed: drop its hash and rebuild it from the same rows. */
+  function onForgetBatchTx(index: number) {
+    setError(null);
+    if (!address) {
+      setError('Connect your wallet to continue the batch.');
+      return;
+    }
+    runner.forgetTx(index);
+    runner.resume();
+  }
 
   const run = runner.run;
   const batchDisabled = validated.length === 0 || hasRowErrors(validated) || !schedule || checking;
@@ -290,6 +300,7 @@ export default function CreateStreamPage() {
                   onPause={runner.pause}
                   onContinue={onContinueBatch}
                   onShift={onShiftBatch}
+                  onForgetTx={onForgetBatchTx}
                   onAbort={runner.abort}
                 />
               </>

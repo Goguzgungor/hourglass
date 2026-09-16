@@ -2,12 +2,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { rpc } from '@stellar/stellar-sdk';
 import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import { DEPLOYMENT } from '@/lib/deployments';
 import type { LockupClient } from '@/lib/sdk';
 import { BATCH_RUN_KEY, loadStoredRun, runReducer, type BatchRun, type RunAction } from './batchPlan';
 import { runBatch } from './runner';
 import { safeStorage, writeJson } from './storage';
-import { prepareBatch, sendPrepared } from './submit';
+import { prepareBatch, resolveBatchTx, sendSigned, signPrepared } from './submit';
+
+/** `getTransaction` against the deployment's RPC (the local quickstart is plain HTTP). */
+function lookupTx(hash: string) {
+  return new rpc.Server(DEPLOYMENT.rpcUrl, { allowHttp: DEPLOYMENT.rpcUrl.startsWith('http://') }).getTransaction(hash);
+}
 
 /**
  * Owns the live BatchRun: a ref (so the runner's synchronous `dispatch` and
@@ -69,7 +76,9 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
               transferable: r.transferable,
               rows: chunk.rowIds.map((id) => ({ recipient: r.rows[id].recipient, total: BigInt(r.rows[id].total) })),
             }),
-          sendChunk: (tx) => sendPrepared(tx as AssembledTransaction<number[]>),
+          signChunk: (tx) => signPrepared(tx as AssembledTransaction<number[]>),
+          sendChunk: (tx) => sendSigned(tx as AssembledTransaction<number[]>),
+          resolveChunk: (txHash) => resolveBatchTx(lockup, txHash, lookupTx),
           dispatch: (a) => {
             if (alive()) dispatch(a);
           },
@@ -120,6 +129,14 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
     },
     [dispatch, sync, loop],
   );
+  /** Drop a failed chunk's transaction hash so the next attempt rebuilds it (user-confirmed). */
+  const forgetTx = useCallback(
+    (index: number) => {
+      dispatch({ type: 'chunk_forget_tx', index });
+      sync();
+    },
+    [dispatch, sync],
+  );
   const abort = useCallback(() => {
     abortRef.current?.abort();
     dispatch({ type: 'abort' });
@@ -145,5 +162,5 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  return { run, stored, busy, persisted: storage !== null, start, resume, pause, shift, abort, load, discard };
+  return { run, stored, busy, persisted: storage !== null, start, resume, pause, shift, forgetTx, abort, load, discard };
 }

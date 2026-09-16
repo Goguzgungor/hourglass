@@ -8,7 +8,7 @@
 
 import { lockup as lockupSdk } from 'hourglass';
 import type { CreateRow, Stream, StreamStatus } from 'hourglass/lockup';
-import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import type { AssembledTransaction, Spec } from '@stellar/stellar-sdk/contract';
 import { DEPLOYMENT } from './deployments';
 import { signTransaction } from './wallet';
 
@@ -20,6 +20,8 @@ export type { CreateRow, CreateSpec, LinearParams, TranchedParams, RecurringPara
  * ------------------------------------------------------------------ */
 
 export interface LockupClient {
+  /** The contract spec (decodes on-chain return values, e.g. a looked-up create_batch). */
+  readonly spec: Spec;
   // ---- views ----
   get_stream(args: { stream_id: number }): Promise<AssembledTransaction<Stream>>;
   status(args: { stream_id: number }): Promise<AssembledTransaction<StreamStatus>>;
