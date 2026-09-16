@@ -15,7 +15,7 @@ const tokens: TokenInfo[] = [
 const preset = (id: string) => BUILT_IN_TEMPLATES.find((t) => t.id === id)!;
 
 describe('initialFormState / parseForm', () => {
-  it('starts linear, 15 minutes ahead on a whole minute, 1h long, valid in both modes', () => {
+  it('starts linear, 25 minutes ahead on a whole minute, 1h long, valid in both modes', () => {
     const s = initialFormState(NOW + 7, tokens);
     expect(s.shape).toBe('linear');
     expect(s.mode).toBe('single');
@@ -23,9 +23,11 @@ describe('initialFormState / parseForm', () => {
     const p = parseForm(s, NOW + 7);
     expect(p.valid).toBe(true);
     expect(p.errors).toEqual({});
-    expect(scheduleStart(p.schedule!)).toBe(NOW + 960); // ceil((NOW+7+900)/60)*60
-    expect(p.schedule).toMatchObject({ shape: 'linear', endTs: NOW + 960 + 3600, unlockAtStartBps: 0, unlockAtCliffBps: 0 });
+    expect(scheduleStart(p.schedule!)).toBe(NOW + 1560); // ceil((NOW+7+1500)/60)*60
+    expect(p.schedule).toMatchObject({ shape: 'linear', endTs: NOW + 1560 + 3600, unlockAtStartBps: 0, unlockAtCliffBps: 0 });
     expect(parseForm({ ...s, mode: 'batch' }, NOW + 7).valid).toBe(true);
+    // still valid in batch mode after the form sat open for 9 minutes (15-minute margin)
+    expect(parseForm({ ...s, mode: 'batch' }, NOW + 7 + 9 * 60).valid).toBe(true);
   });
   it('percent ↔ bps helpers', () => {
     expect(pctToBps('25')).toBe(2500);
@@ -54,7 +56,11 @@ describe('apply_template', () => {
     expect(s.linear.unlockAtStartPct).toBe('0');
     const p = parseForm(s, NOW);
     expect(p.valid).toBe(true);
-    expect(p.schedule).toMatchObject({ startTs: NOW + 900, cliffTs: NOW + 900 + 365 * 86_400, endTs: NOW + 900 + 1460 * 86_400 });
+    // batch mode: the 15-minute preset offset is padded to 25 minutes so the start does not sit on the margin
+    expect(p.schedule).toMatchObject({ startTs: NOW + 1500, cliffTs: NOW + 1500 + 365 * 86_400, endTs: NOW + 1500 + 1460 * 86_400 });
+    // single mode keeps the preset's own offset
+    const single = formReducer(initialFormState(NOW, tokens), { type: 'apply_template', template: preset('linear-4y-1y-cliff-25'), nowSec: NOW, knownTokens: [] });
+    expect(parseForm(single, NOW).schedule).toMatchObject({ startTs: NOW + 900 });
   });
   it('fills recurring and tranched fields with friendly units', () => {
     let s = formReducer(initialFormState(NOW, tokens), { type: 'apply_template', template: preset('recurring-weekly-52'), nowSec: NOW, knownTokens: [] });
@@ -84,7 +90,32 @@ describe('apply_template', () => {
     const s = formReducer({ ...initialFormState(NOW, tokens), mode: 'batch' }, { type: 'apply_template', template: t, nowSec: NOW + 30, knownTokens: [] });
     const p = parseForm(s, NOW + 30);
     expect(p.valid).toBe(true);
-    expect(scheduleStart(p.schedule!)).toBe(NOW + 960);
+    expect(scheduleStart(p.schedule!)).toBe(NOW + 1560); // ceil((NOW+30+1500)/60)*60
+  });
+});
+
+describe('bump_start', () => {
+  it('moves a stale start to ceilMinute(now + margin), keeps the duration, marks the template dirty', () => {
+    let s = formReducer(initialFormState(NOW, tokens), { type: 'apply_template', template: preset('linear-1y'), nowSec: NOW, knownTokens: [] });
+    s = formReducer(s, { type: 'set_linear', patch: { start: unixToDatetimeLocal(NOW + 60), end: unixToDatetimeLocal(NOW + 60 + 7200) } });
+    const stale = parseForm({ ...s, mode: 'batch' }, NOW);
+    expect(stale.valid).toBe(false);
+    expect(stale.errors.start).toBeDefined();
+    const bumped = formReducer({ ...s, mode: 'batch' }, { type: 'bump_start', nowSec: NOW + 7, margin: 1500 });
+    const p = parseForm(bumped, NOW + 7);
+    expect(p.valid).toBe(true);
+    expect(scheduleStart(p.schedule!)).toBe(NOW + 1560);
+    expect(p.schedule).toMatchObject({ shape: 'linear', endTs: NOW + 1560 + 7200 });
+    expect(bumped.templateDirty).toBe(true);
+    // recurring: the first unlock moves, period/count untouched
+    let r = formReducer(initialFormState(NOW, tokens), { type: 'set_shape', shape: 'recurring' });
+    r = formReducer(r, { type: 'set_recurring', patch: { first: unixToDatetimeLocal(NOW - 600) } });
+    r = formReducer(r, { type: 'bump_start', nowSec: NOW, margin: 1500 });
+    expect(parseForm(r, NOW).schedule).toMatchObject({ shape: 'recurring', firstTs: NOW + 1500, periodSecs: 30 * 86_400, count: 12 });
+  });
+  it('is a no-op when the form does not parse to a schedule', () => {
+    const s = formReducer(initialFormState(NOW, tokens), { type: 'set_linear', patch: { end: '' } });
+    expect(formReducer(s, { type: 'bump_start', nowSec: NOW, margin: 1500 })).toBe(s);
   });
 });
 

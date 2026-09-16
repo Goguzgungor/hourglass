@@ -8,16 +8,26 @@ import { datetimeLocalToUnix, unixToDatetimeLocal } from '@/lib/format';
 import type { TokenInfo } from '@/lib/tokens';
 import { parseRows, type RowInput, type Skipped } from './rows';
 import {
+  BATCH_START_MARGIN_SECS,
   BPS_DENOM,
   alignToMinute,
   clampScheduleStart,
   resolveSchedule,
+  scheduleStart,
+  shiftSchedule,
   validateSchedule,
   type Mode,
   type Schedule,
   type Shape,
 } from './schedule';
 import type { Template } from './templates';
+
+/**
+ * How far ahead a default / bumped start sits (25 min). Comfortably above the
+ * 15-minute batch margin: a form that sits open for a few minutes (or a
+ * template applied in batch mode) must not fail validation on the next tick.
+ */
+export const START_LEAD_SECS = 1500;
 
 export type TrancheField = { id: string; offsetValue: string; offsetUnit: 'hours' | 'days'; pct: string };
 export type PeriodUnit = 'minutes' | 'hours' | 'days' | 'weeks';
@@ -57,7 +67,9 @@ export type FormAction =
   | { type: 'clear_rows' }
   | { type: 'import_rows'; text: string }
   | { type: 'template_saved'; templateId: string }
-  | { type: 'clear_template' };
+  | { type: 'clear_template' }
+  /** Shift the whole schedule so its start lands on `ceilMinute(nowSec + margin)` (duration preserved). */
+  | { type: 'bump_start'; nowSec: number; margin: number };
 
 const UNIT_SECS: Record<PeriodUnit, number> = { minutes: 60, hours: 3600, days: 86_400, weeks: 604_800 };
 const OFFSET_SECS: Record<TrancheField['offsetUnit'], number> = { hours: 3600, days: 86_400 };
@@ -96,7 +108,7 @@ function periodFields(secs: number): Pick<FormState['recurring'], 'periodValue' 
 }
 
 export function initialFormState(nowSec: number, tokens: TokenInfo[]): FormState {
-  const start = ceilMinute(nowSec + 900);
+  const start = ceilMinute(nowSec + START_LEAD_SECS);
   const startStr = unixToDatetimeLocal(start);
   return {
     templateId: null,
@@ -173,7 +185,9 @@ export function formReducer(s: FormState, a: FormAction): FormState {
   switch (a.type) {
     case 'apply_template': {
       const t = a.template;
-      const sch = alignToMinute(clampScheduleStart(resolveSchedule(t.schedule, a.nowSec), a.nowSec, s.mode));
+      // In batch mode pad the clamp so the start lands ≥ now + START_LEAD_SECS, not on the 15-minute margin itself.
+      const pad = s.mode === 'batch' ? START_LEAD_SECS - BATCH_START_MARGIN_SECS : 0;
+      const sch = alignToMinute(clampScheduleStart(resolveSchedule(t.schedule, a.nowSec), a.nowSec + pad, s.mode));
       const next = scheduleToFields(s, sch);
       return {
         ...next,
@@ -262,6 +276,11 @@ export function formReducer(s: FormState, a: FormAction): FormState {
       return { ...s, templateId: a.templateId, templateDirty: false };
     case 'clear_template':
       return { ...s, templateId: null, templateDirty: false };
+    case 'bump_start': {
+      const { schedule } = parseForm(s, a.nowSec);
+      if (!schedule) return s;
+      return dirty(scheduleToFields(s, shiftSchedule(schedule, ceilMinute(a.nowSec + a.margin) - scheduleStart(schedule))));
+    }
   }
 }
 

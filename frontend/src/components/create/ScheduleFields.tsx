@@ -3,19 +3,25 @@
 
 import type { Dispatch } from 'react';
 import { MAX_TRANCHES } from '@/lib/create/schedule';
-import type { FormAction, FormState } from '@/lib/create/formState';
+import { START_LEAD_SECS, type FormAction, type FormState } from '@/lib/create/formState';
 import { Field, PctInput, bareInputClass, ghostButtonClass } from './fields';
 
-type Props = { state: FormState; errors: Record<string, string>; dispatch: Dispatch<FormAction> };
+type Props = {
+  state: FormState;
+  errors: Record<string, string>;
+  dispatch: Dispatch<FormAction>;
+  /** Current time (the page's validation tick); anchors "Move start to +25 min". */
+  nowSec: number;
+};
 
-export default function ScheduleFields({ state, errors, dispatch }: Props) {
-  switch (state.shape) {
+export default function ScheduleFields(props: Props) {
+  switch (props.state.shape) {
     case 'linear':
-      return <LinearFields state={state} errors={errors} dispatch={dispatch} />;
+      return <LinearFields {...props} />;
     case 'tranched':
-      return <TranchedFields state={state} errors={errors} dispatch={dispatch} />;
+      return <TranchedFields {...props} />;
     case 'recurring':
-      return <RecurringFields state={state} errors={errors} dispatch={dispatch} />;
+      return <RecurringFields {...props} />;
   }
 }
 
@@ -23,15 +29,28 @@ function DateInput({ value, onChange }: { value: string; onChange: (v: string) =
   return <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)} className={bareInputClass + ' font-mono'} />;
 }
 
-function LinearFields({ state, errors, dispatch }: Props) {
+/** Shown under the start field when its validation fails (typically: the start slipped into the margin). */
+function BumpStart({ show, nowSec, dispatch }: { show: boolean; nowSec: number; dispatch: Dispatch<FormAction> }) {
+  if (!show) return null;
+  return (
+    <button type="button" className={ghostButtonClass + ' mt-2'} onClick={() => dispatch({ type: 'bump_start', nowSec, margin: START_LEAD_SECS })}>
+      Move start to +25 min
+    </button>
+  );
+}
+
+function LinearFields({ state, errors, dispatch, nowSec }: Props) {
   const l = state.linear;
   const set = (patch: Partial<FormState['linear']>) => dispatch({ type: 'set_linear', patch });
   return (
     <div className="space-y-8">
       <div className="grid sm:grid-cols-3 gap-x-6 gap-y-8">
-        <Field label="Start" error={errors.start}>
-          <DateInput value={l.start} onChange={(v) => set({ start: v, ...(l.hasCliff ? {} : { cliff: v }) })} />
-        </Field>
+        <div>
+          <Field label="Start" error={errors.start}>
+            <DateInput value={l.start} onChange={(v) => set({ start: v, ...(l.hasCliff ? {} : { cliff: v }) })} />
+          </Field>
+          <BumpStart show={!!errors.start} nowSec={nowSec} dispatch={dispatch} />
+        </div>
         <Field label="Cliff" hint={l.hasCliff ? undefined : 'No cliff — vesting starts immediately.'} error={errors.cliff}>
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-xs text-cream-dim">
@@ -57,13 +76,16 @@ function LinearFields({ state, errors, dispatch }: Props) {
   );
 }
 
-function TranchedFields({ state, errors, dispatch }: Props) {
+function TranchedFields({ state, errors, dispatch, nowSec }: Props) {
   const t = state.tranched;
   return (
     <div className="space-y-8">
-      <Field label="Start" hint="Reference time; tranche offsets count from here." error={errors.start}>
-        <DateInput value={t.start} onChange={(v) => dispatch({ type: 'set_tranched_start', start: v })} />
-      </Field>
+      <div>
+        <Field label="Start" hint="Reference time; tranche offsets count from here." error={errors.start}>
+          <DateInput value={t.start} onChange={(v) => dispatch({ type: 'set_tranched_start', start: v })} />
+        </Field>
+        <BumpStart show={!!errors.start} nowSec={nowSec} dispatch={dispatch} />
+      </div>
       <div>
         <div className="flex items-center justify-between mb-3">
           <span className="eyebrow text-cream-dim">Tranches ({t.tranches.length})</span>
@@ -125,14 +147,17 @@ function TranchedFields({ state, errors, dispatch }: Props) {
   );
 }
 
-function RecurringFields({ state, errors, dispatch }: Props) {
+function RecurringFields({ state, errors, dispatch, nowSec }: Props) {
   const r = state.recurring;
   const set = (patch: Partial<FormState['recurring']>) => dispatch({ type: 'set_recurring', patch });
   return (
     <div className="grid sm:grid-cols-3 gap-x-6 gap-y-8">
-      <Field label="First unlock" error={errors.start}>
-        <DateInput value={r.first} onChange={(v) => set({ first: v })} />
-      </Field>
+      <div>
+        <Field label="First unlock" error={errors.start}>
+          <DateInput value={r.first} onChange={(v) => set({ first: v })} />
+        </Field>
+        <BumpStart show={!!errors.start} nowSec={nowSec} dispatch={dispatch} />
+      </div>
       <Field label="Every" error={errors.period}>
         <div className="flex gap-3 items-baseline border-b border-stroke focus-within:border-sand">
           <input type="text" inputMode="decimal" value={r.periodValue} onChange={(e) => set({ periodValue: e.target.value })} className="flex-1 bg-transparent border-0 px-0 py-2 text-cream outline-none font-mono w-20" />

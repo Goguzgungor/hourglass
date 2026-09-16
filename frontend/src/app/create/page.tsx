@@ -338,7 +338,7 @@ export default function CreateStreamPage() {
                 <ShapeTabs shape={state.shape} onChange={(shape) => dispatch({ type: 'set_shape', shape })} />
               </div>
 
-              <ScheduleFields state={state} errors={parsed.errors} dispatch={dispatch} />
+              <ScheduleFields state={state} errors={parsed.errors} dispatch={dispatch} nowSec={tick} />
 
               <div>
                 <span className="eyebrow text-cream-dim block mb-3">Recipients</span>
