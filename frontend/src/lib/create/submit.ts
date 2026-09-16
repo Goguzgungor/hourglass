@@ -32,6 +32,9 @@ export async function submitSingle(
     is_transferable: args.transferable,
   };
   const tx = await createTx(lockup, common, built.spec);
+  // The SDK does not throw on a failed simulation until `simulationData` is read
+  // (sign/signAndSend do it); read it here so build-phase errors are visible to the runner.
+  void tx.simulationData;
   const sent = await tx.signAndSend();
   return { streamId: sent.result, txHash: txHashOf(sent) };
 }
@@ -73,7 +76,11 @@ export async function prepareBatch(
 ): Promise<AssembledTransaction<number[]>> {
   const flags = { cancelable: args.cancelable, transferable: args.transferable };
   const rows = args.rows.map((r) => toCreateRow(r.recipient, buildSpec(args.schedule, r.total), flags));
-  return lockup.create_batch({ sender: args.sender, token: args.token, rows });
+  const tx = await lockup.create_batch({ sender: args.sender, token: args.token, rows });
+  // The SDK does not throw on a failed simulation until `simulationData` is read
+  // (sign/signAndSend do it); read it here so build-phase errors are visible to the runner.
+  void tx.simulationData;
+  return tx;
 }
 
 export async function sendPrepared(

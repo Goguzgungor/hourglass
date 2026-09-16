@@ -77,4 +77,18 @@ describe('prepareBatch / sendPrepared / toCreateRow', () => {
     expect(txHashOf({ getTransactionResponse: { txHash: 'b' } })).toBe('b');
     expect(txHashOf({})).toBe('');
   });
+  it('prepareBatch surfaces a failed simulation instead of returning the tx', async () => {
+    const boom = new Error('Transaction simulation failed: "HostError: Error(Budget, ExceededLimit)"');
+    const client = {
+      create_batch: async () => ({
+        get simulationData() {
+          throw boom;
+        },
+        signAndSend: async () => ({ result: [] }),
+      }),
+    } as unknown as LockupClient;
+    await expect(
+      prepareBatch(client, { sender: G1, token: 'C', schedule: recurring, cancelable: true, transferable: true, rows: [{ recipient: G2, total: 100n }] }),
+    ).rejects.toBe(boom);
+  });
 });
