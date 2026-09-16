@@ -79,6 +79,7 @@ export function useBatchRunner(getLockup: () => LockupClient | null) {
           signChunk: (tx) => signPrepared(tx as AssembledTransaction<number[]>),
           sendChunk: (tx) => sendSigned(tx as AssembledTransaction<number[]>),
           resolveChunk: (txHash) => resolveBatchTx(lockup, txHash, lookupTx),
+          lockupId: DEPLOYMENT.lockup,
           dispatch: (a) => {
             if (alive()) dispatch(a);
           },

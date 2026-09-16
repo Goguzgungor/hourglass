@@ -41,10 +41,34 @@ export const CONTRACT_ERRORS: Record<number, { name: string; message: string }> 
   90: { name: 'Overflow', message: 'Arithmetic overflow.' },
 };
 
+/**
+ * Stellar Asset Contract error codes. The token transfer inside `create_*` is
+ * a cross-contract call and these collide with the lockup's own codes
+ * (BalanceError = 10 vs ZeroDeposit = 10, TrustlineMissingError = 13 vs
+ * UnlocksExceedDeposit = 13, …).
+ */
+export const SAC_ERRORS: Record<number, string> = {
+  1: 'Token contract internal error.',
+  2: 'The token contract does not support this operation.',
+  3: 'The token contract is already initialized.',
+  4: 'The token contract refused the transfer (unauthorized).',
+  5: 'The token contract could not authenticate the sender.',
+  6: 'The sender account does not exist on the network.',
+  7: 'The sender is not a classic Stellar account.',
+  8: 'The token contract rejected a negative amount.',
+  9: 'Allowance exceeded.',
+  10: 'Insufficient token balance.',
+  11: 'The token balance is deauthorized (frozen) for this account.',
+  12: 'Token amount overflow.',
+  13: 'The recipient or sender has no trustline for this token.',
+};
+
 const REJECTED_RE = /user (rejected|declined|denied)|rejected by user|cancell?ed by user|User declined|declined the request/i;
 const RESOURCE_RE =
   /ExceededLimit|exceeds? (the )?(resource|size|budget)|resource limit|TxSorobanInvalid|txSorobanInvalid|TX_SOROBAN_INVALID/i;
 const CONTRACT_RE = /Error\(Contract, #(\d+)\)/;
+/** One `[Diagnostic Event]` error line: which contract raised (or escalated) the error. */
+const DIAG_RE = /contract:(C[A-Z2-7]{55}), topics:\[error, Error\(Contract, #(\d+)\)\]/g;
 
 function collectText(e: unknown): string {
   if (e === undefined || e === null) return '';
@@ -64,8 +88,32 @@ function collectText(e: unknown): string {
   return parts.join('\n');
 }
 
-export function classifyTxError(e: unknown): ClassifiedError {
+/**
+ * A contract error raised by another contract than the lockup (the token).
+ * The diagnostic log is newest first and the lockup's own "escalating error"
+ * / "contract call failed" events sit above the token's, all carrying the same
+ * code — so any error event from a foreign contract id is the origin.
+ */
+function foreignContractError(text: string, lockupId: string): ClassifiedError | null {
+  for (const m of text.matchAll(DIAG_RE)) {
+    if (m[1] === lockupId) continue;
+    const code = Number(m[2]);
+    return { kind: 'contract', code, name: 'TokenContractError', message: SAC_ERRORS[code] ?? `Token contract error #${code}` };
+  }
+  return null;
+}
+
+/**
+ * `ctx.lockupId` lets a code raised by the token contract be told apart from
+ * the lockup's own; without it, every `Error(Contract, #N)` is read from the
+ * lockup table.
+ */
+export function classifyTxError(e: unknown, ctx?: { lockupId?: string }): ClassifiedError {
   const text = collectText(e);
+  if (ctx?.lockupId) {
+    const foreign = foreignContractError(text, ctx.lockupId);
+    if (foreign) return foreign;
+  }
   const contract = CONTRACT_RE.exec(text);
   if (contract) {
     const code = Number(contract[1]);

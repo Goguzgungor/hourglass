@@ -13,6 +13,14 @@ batch 100 rows: "Transaction simulation failed: \"HostError: Error(Budget, Excee
 
 Both strings are pinned in `frontend/src/lib/create/errors.test.ts`.
 
+Final fix wave, 2026-09-16 (same method — simulation only — `create_linear` with a 900,000,000 XLM deposit so the token transfer fails; native SAC `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`):
+
+```
+sac BalanceError (#10): "Transaction simulation failed: \"HostError: Error(Contract, #10)\n\nEvent log (newest first):\n   0: [Diagnostic Event] contract:CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, topics:[error, Error(Contract, #10)], data:\"escalating error to VM trap from failed host function call: call\"\n   1: [Diagnostic Event] contract:CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, topics:[error, Error(Contract, #10)], data:[\"contract call failed\", transfer, [GBXDHEVCWZCP45D5VCBLYEQFX33DTHULU6KMH5YPJ54XXOJ6DO2P3MU2, CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, 9000000000000000]]\n   2: [Failed Diagnostic Event (not emitted)] contract:CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC, topics:[error, Error(Contract, #10)], data:[\"resulting balance is not within the allowed range\", 20000000, -8999912569521706, 9223372036854775807]\n   3: [Diagnostic Event] contract:CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL, topics:[fn_call, CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC, transfer], data:[…]"
+```
+
+The lockup's own "escalating error" / "contract call failed" events carry the token's code and come *before* the token's event, so `classifyTxError` treats any error event from a contract other than the lockup as the origin (`TokenContractError`, SAC table) instead of stopping at the first one. Pinned verbatim in `errors.test.ts`.
+
 ## Unit tests
 
 `npm test` on 2026-09-16: 21 test files, 204 tests, all passing. `npm run typecheck` clean. `npm run build` OK.

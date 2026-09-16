@@ -204,6 +204,22 @@ describe('runBatch', () => {
     expect(h.run().chunks[0].status).toBe('pending');
     expect(h.run().phase).toBe('paused');
   });
+  it('passes lockupId to error classification so a token-contract code is not read as a lockup error', async () => {
+    const LOCKUP = 'CB25NO7BEWVLTAUBAMPMUDIO6VGLBGZHN6TG4TKFNM3U5M5YEXVWEWNL';
+    const TOKEN = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+    const msg =
+      `Transaction simulation failed: "HostError: Error(Contract, #10)\n\nEvent log (newest first):\n` +
+      `   0: [Diagnostic Event] contract:${LOCKUP}, topics:[error, Error(Contract, #10)], data:"escalating error to VM trap from failed host function call: call"\n` +
+      `   1: [Failed Diagnostic Event (not emitted)] contract:${TOKEN}, topics:[error, Error(Contract, #10)], data:["resulting balance is not within the allowed range", 1, -2, 3]`;
+    const h = harness(makeRun(2, 1), { buildError: () => new Error(msg) });
+    h.deps.lockupId = LOCKUP;
+    await runBatch(h.deps, new AbortController().signal);
+    expect(h.run().chunks[0].error).toEqual({ kind: 'contract', code: 10, name: 'TokenContractError', message: 'Insufficient token balance.' });
+    expect(h.run().pauseReason).toBe('failed');
+    const bare = harness(makeRun(2, 1), { buildError: () => new Error(msg) });
+    await runBatch(bare.deps, new AbortController().signal);
+    expect(bare.run().chunks[0].error).toMatchObject({ code: 10, name: 'ZeroDeposit' });
+  });
   it('pauseReasonFor maps error kinds', () => {
     expect(pauseReasonFor({ kind: 'rejected', message: '' })).toBe('rejected');
     expect(pauseReasonFor({ kind: 'contract', code: 18, name: 'StartInPast', message: '' })).toBe('start_in_past');

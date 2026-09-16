@@ -180,7 +180,7 @@ export default function CreateStreamPage() {
       router.push(`/stream/${streamId}`);
     } catch (e) {
       console.error(e);
-      setError(describeError(classifyTxError(e)));
+      setError(describeError(classifyTxError(e, { lockupId: DEPLOYMENT.lockup })));
     } finally {
       setSubmitting(false);
     }

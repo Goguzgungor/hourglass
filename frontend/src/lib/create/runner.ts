@@ -28,6 +28,8 @@ export type RunnerDeps = {
   sendChunk: (tx: PreparedTx) => Promise<{ txHash: string; streamIds: number[] }>;
   /** Look up a previously submitted tx. */
   resolveChunk: (txHash: string) => Promise<ChunkResolution>;
+  /** Lockup contract id, so token-contract error codes are not read as lockup errors. */
+  lockupId?: string;
   dispatch: (a: RunAction) => void;
   getRun: () => BatchRun;
   persist: (run: BatchRun) => void;
@@ -49,6 +51,7 @@ export async function runBatch(deps: RunnerDeps, signal: AbortSignal): Promise<v
     deps.dispatch(a);
     deps.persist(deps.getRun());
   };
+  const classify = (e: unknown) => classifyTxError(e, { lockupId: deps.lockupId });
 
   while (!signal.aborted) {
     const run = deps.getRun();
@@ -84,7 +87,7 @@ export async function runBatch(deps: RunnerDeps, signal: AbortSignal): Promise<v
     try {
       tx = await deps.buildChunk(deps.getRun(), chunk);
     } catch (e) {
-      const err = classifyTxError(e);
+      const err = classify(e);
       if (err.kind === 'resource' && chunk.rowIds.length > 1) {
         step({ type: 'split_chunk', index: chunk.index });
         continue;
@@ -104,7 +107,7 @@ export async function runBatch(deps: RunnerDeps, signal: AbortSignal): Promise<v
     try {
       ({ txHash } = await deps.signChunk(tx));
     } catch (e) {
-      const err = classifyTxError(e);
+      const err = classify(e);
       step({ type: 'chunk_failed', index: chunk.index, error: err, pause: pauseReasonFor(err) });
       return;
     }
@@ -116,7 +119,7 @@ export async function runBatch(deps: RunnerDeps, signal: AbortSignal): Promise<v
       step({ type: 'chunk_done', index: chunk.index, txHash: sent.txHash || txHash, streamIds: sent.streamIds });
     } catch (e) {
       // Keep the hash: the next attempt resolves it instead of re-signing.
-      const message = describeError(classifyTxError(e));
+      const message = describeError(classify(e));
       step({ type: 'chunk_failed', index: chunk.index, error: { kind: 'network', message }, pause: 'failed' });
       return;
     }
