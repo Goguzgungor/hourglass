@@ -1,15 +1,30 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { searchKind } from '@/lib/dashboard/filters';
 
 export default function SearchBox({ value, onChange }: { value: string; onChange: (q: string) => void }) {
   const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
+  // Last value this box pushed upstream; a `value` equal to it is our own echo,
+  // not an external change (Clear filters, shared URL), so local typing survives.
+  const lastSent = useRef(value);
+
   useEffect(() => {
-    if (text === value) return;
-    const id = setTimeout(() => onChange(text.trim()), 300);
+    if (value !== lastSent.current) {
+      lastSent.current = value;
+      setText(value);
+    }
+  }, [value]);
+
+  useEffect(() => {
+    const next = text.trim();
+    if (next === lastSent.current) return;
+    const id = setTimeout(() => {
+      lastSent.current = next;
+      onChange(next);
+    }, 300);
     return () => clearTimeout(id);
-  }, [text, value, onChange]);
+  }, [text, onChange]);
+
   const kind = searchKind(text);
   return (
     <div className="flex-1 min-w-[220px]">
