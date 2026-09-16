@@ -291,7 +291,7 @@ export default function CreateStreamPage() {
 
           {run ? (
             run.phase === 'completed' || run.phase === 'aborted' ? (
-              <CreateResult run={run} onReset={runner.discard} />
+              <CreateResult run={run} busy={runner.busy} onReset={runner.discard} />
             ) : (
               <>
                 {error && <p className="mt-10 font-mono text-xs text-danger border-l-2 border-danger pl-4 py-2">{error}</p>}

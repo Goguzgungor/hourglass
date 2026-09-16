@@ -56,7 +56,16 @@ export default function CsvImport({ onImport, lastImport }: Props) {
         </button>
         <label className={ghostButtonClass + ' cursor-pointer'}>
           Upload .csv
-          <input type="file" accept=".csv,.txt,text/csv,text/plain" className="sr-only" onChange={(e) => onFile(e.target.files?.[0])} />
+          <input
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain"
+            className="sr-only"
+            onChange={(e) => {
+              void onFile(e.target.files?.[0]);
+              // Reset so picking the same file again fires `change` (after a clear / edit).
+              e.target.value = '';
+            }}
+          />
         </label>
         <span className="text-[10px] text-cream-dim/70">Separators: comma, semicolon, tab or spaces. Extra columns are ignored.</span>
       </div>

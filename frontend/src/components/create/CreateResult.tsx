@@ -6,7 +6,7 @@ import { runProgress, type BatchRun } from '@/lib/create/batchPlan';
 import { txUrl } from '@/lib/explorer';
 import { primaryButtonClass, secondaryButtonClass } from './fields';
 
-export default function CreateResult({ run, onReset }: { run: BatchRun; onReset: () => void }) {
+export default function CreateResult({ run, busy, onReset }: { run: BatchRun; busy: boolean; onReset: () => void }) {
   const p = runProgress(run);
   const aborted = run.phase === 'aborted';
   const remaining = Object.keys(run.rows).length - p.streams;
@@ -51,7 +51,7 @@ export default function CreateResult({ run, onReset }: { run: BatchRun; onReset:
         <Link href="/dashboard" className={primaryButtonClass + ' sm:w-auto'}>
           Go to dashboard →
         </Link>
-        <button type="button" className={secondaryButtonClass} onClick={onReset}>
+        <button type="button" className={secondaryButtonClass} onClick={onReset} disabled={busy}>
           Create another
         </button>
       </div>
