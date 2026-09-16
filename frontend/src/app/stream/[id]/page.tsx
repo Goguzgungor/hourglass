@@ -57,25 +57,8 @@ function shapeTitle(s: Stream): string {
   return l === 'LINEAR' ? 'Linear' : l === 'RECURRING' ? 'Recurring' : 'Tranched';
 }
 
-/** Expand a Recurring shape into equal tranches for the tranched view paths. */
-function recurringToTranches(r: {
-  first_ts: bigint | number;
-  period_secs: bigint | number;
-  count: number;
-  amount_per_period: bigint;
-}): Array<{ amount: bigint; ts: number }> {
-  const first = Number(r.first_ts);
-  const period = Number(r.period_secs);
-  const amount = BigInt(r.amount_per_period);
-  return Array.from({ length: Number(r.count) }, (_, i) => ({
-    amount,
-    ts: first + i * period,
-  }));
-}
-
 /**
  * View-model shape consumed by CelestialDial / LiveCounter / EmissionChart.
- * Recurring streams are presented as Tranched (their math is identical).
  */
 function viewShape(s: Stream): ViewShape {
   if (s.shape.tag === 'Linear') {
@@ -95,7 +78,25 @@ function viewShape(s: Stream): ViewShape {
       })),
     };
   }
-  return { tag: 'Tranched', tranches: recurringToTranches(s.shape.values[0]) };
+  const r = s.shape.values[0];
+  return {
+    tag: 'Recurring',
+    first_ts: Number(r.first_ts),
+    period_secs: Number(r.period_secs),
+    count: Number(r.count),
+    amount_per_period: BigInt(r.amount_per_period),
+  };
+}
+
+const RENDERED_UNLOCKS = 24;
+
+/** First `n` unlocks of a recurring shape as tranche points (for lists and charts). */
+function recurringPreview(
+  r: Extract<ViewShape, { tag: 'Recurring' }>,
+  n: number = RENDERED_UNLOCKS,
+): Array<{ amount: bigint; ts: number }> {
+  const shown = Math.min(n, r.count);
+  return Array.from({ length: shown }, (_, i) => ({ amount: r.amount_per_period, ts: r.first_ts + i * r.period_secs }));
 }
 
 /**
@@ -875,48 +876,55 @@ function LoadedStream({
                     </p>
                   )}
                 </div>
-                {vshape.tag === 'Tranched' && (
-                  <div className="mt-8 pt-6 border-t border-stroke/40">
-                    <p className="eyebrow text-cream-dim mb-4">
-                      {stream.shape.tag === 'Recurring' ? 'Unlocks' : 'Tranches'}
-                    </p>
-                    <ul className="space-y-0">
-                      {vshape.tranches.map((t, i) => (
-                        <li
-                          key={i}
-                          className="grid grid-cols-[28px_1fr] sm:grid-cols-[28px_1fr_180px] items-baseline gap-x-4 gap-y-1 py-3 border-b border-stroke/40 last:border-b-0"
-                        >
-                          <span className="font-mono text-xs text-cream-dim tabular">
-                            #{i + 1}
-                          </span>
-                          <span className="font-mono text-sm text-sand-bright tabular break-words">
-                            +{formatStroops(t.amount)}{' '}
-                            <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim ml-1">
-                              XLM
+                {(vshape.tag === 'Tranched' || vshape.tag === 'Recurring') && (() => {
+                  const points = vshape.tag === 'Tranched' ? vshape.tranches : recurringPreview(vshape);
+                  const hidden = vshape.tag === 'Recurring' ? Math.max(0, vshape.count - points.length) : 0;
+                  return (
+                    <div className="mt-8 pt-6 border-t border-stroke/40">
+                      <p className="eyebrow text-cream-dim mb-4">{vshape.tag === 'Recurring' ? 'Unlocks' : 'Tranches'}</p>
+                      <ul className="space-y-0">
+                        {points.map((t, i) => (
+                          <li
+                            key={i}
+                            className="grid grid-cols-[28px_1fr] sm:grid-cols-[28px_1fr_180px] items-baseline gap-x-4 gap-y-1 py-3 border-b border-stroke/40 last:border-b-0"
+                          >
+                            <span className="font-mono text-xs text-cream-dim tabular">
+                              #{i + 1}
                             </span>
-                          </span>
-                          <span className="font-mono text-xs text-cream-dim col-start-2 sm:col-start-3 text-left sm:text-right">
-                            {formatTimestamp(t.ts)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                            <span className="font-mono text-sm text-sand-bright tabular break-words">
+                              +{formatStroops(t.amount)}{' '}
+                              <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim ml-1">
+                                XLM
+                              </span>
+                            </span>
+                            <span className="font-mono text-xs text-cream-dim col-start-2 sm:col-start-3 text-left sm:text-right">
+                              {formatTimestamp(t.ts)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {hidden > 0 && vshape.tag === 'Recurring' && (
+                        <p className="mt-3 text-xs text-cream-dim">
+                          and {hidden} more unlock{hidden === 1 ? '' : 's'} every {formatDuration(vshape.period_secs)} until {formatTimestamp(vshape.first_ts + (vshape.count - 1) * vshape.period_secs)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
             {activeTab === 'emission' && (
               <div className="mt-8 reveal" style={{ animationDelay: '60ms' }}>
                 <EmissionChart
-                  model={vshape.tag}
+                  model={vshape.tag === 'Linear' ? 'Linear' : 'Tranched'}
                   start_ts={startTs}
                   cliff_ts={hasCliff ? cliffTs : undefined}
                   end_ts={endTs}
                   deposited={deposited}
                   unlock_at_start={vshape.tag === 'Linear' ? vshape.unlock_at_start : 0n}
                   unlock_at_cliff={vshape.tag === 'Linear' ? vshape.unlock_at_cliff : 0n}
-                  tranches={vshape.tag === 'Tranched' ? vshape.tranches : []}
+                  tranches={vshape.tag === 'Tranched' ? vshape.tranches : vshape.tag === 'Recurring' ? recurringPreview(vshape) : []}
                   tokenSymbol="XLM"
                 />
                 <p className="mt-4 font-mono text-xs text-cream-dim">
