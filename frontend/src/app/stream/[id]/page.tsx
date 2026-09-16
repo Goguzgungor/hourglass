@@ -90,13 +90,36 @@ function viewShape(s: Stream): ViewShape {
 
 const RENDERED_UNLOCKS = 24;
 
-/** First `n` unlocks of a recurring shape as tranche points (for lists and charts). */
+/** First `n` unlocks of a recurring shape as tranche points (for the unlock list). */
 function recurringPreview(
   r: Extract<ViewShape, { tag: 'Recurring' }>,
   n: number = RENDERED_UNLOCKS,
 ): Array<{ amount: bigint; ts: number }> {
   const shown = Math.min(n, r.count);
   return Array.from({ length: shown }, (_, i) => ({ amount: r.amount_per_period, ts: r.first_ts + i * r.period_secs }));
+}
+
+/**
+ * Up to `n` chart points sampled evenly across a recurring schedule (always
+ * including the last unlock). Amounts are cumulative differences, so summing
+ * them reproduces the total at each sampled point and `deposited` at the end.
+ */
+function recurringChartTranches(
+  r: Extract<ViewShape, { tag: 'Recurring' }>,
+  n: number = RENDERED_UNLOCKS,
+): Array<{ amount: bigint; ts: number }> {
+  const shown = Math.min(n, r.count);
+  if (shown <= 0) return [];
+  const out: Array<{ amount: bigint; ts: number }> = [];
+  let prev = -1;
+  for (let i = 0; i < shown; i++) {
+    // last sample is always the final unlock (index count-1)
+    const k = i === shown - 1 ? r.count - 1 : Math.floor(((i + 1) * r.count) / shown) - 1;
+    const idx = Math.max(k, prev + 1);
+    out.push({ amount: r.amount_per_period * BigInt(idx - prev), ts: r.first_ts + idx * r.period_secs });
+    prev = idx;
+  }
+  return out;
 }
 
 /**
@@ -924,7 +947,7 @@ function LoadedStream({
                   deposited={deposited}
                   unlock_at_start={vshape.tag === 'Linear' ? vshape.unlock_at_start : 0n}
                   unlock_at_cliff={vshape.tag === 'Linear' ? vshape.unlock_at_cliff : 0n}
-                  tranches={vshape.tag === 'Tranched' ? vshape.tranches : vshape.tag === 'Recurring' ? recurringPreview(vshape) : []}
+                  tranches={vshape.tag === 'Tranched' ? vshape.tranches : vshape.tag === 'Recurring' ? recurringChartTranches(vshape) : []}
                   tokenSymbol="XLM"
                 />
                 <p className="mt-4 font-mono text-xs text-cream-dim">
