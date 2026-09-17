@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RENDERED_UNLOCKS,
   deriveStatus,
+  recurringChartTranches,
+  recurringPreview,
   streamedAmount,
   streamedFraction,
   withdrawableNow,
+  type RecurringSchedule,
   type StreamTerms,
 } from './streaming';
 
@@ -192,5 +196,68 @@ describe('streamedFraction', () => {
     expect(streamedFraction(z, 5)).toBe(0);
     const h = { ...base, model: 'Linear' as const, start_ts: 0, cliff_ts: 0, end_ts: 4, deposited: '100000000000000000000000000', unlock_at_start: '0', unlock_at_cliff: '0' };
     expect(streamedFraction(h, 1)).toBe(0.25);
+  });
+});
+
+describe('recurring schedule rendering', () => {
+  const sched = (count: number): RecurringSchedule => ({ first_ts: 1_000, period_secs: 100, count, amount_per_period: 250n });
+  const COUNTS = [1, 5, 24, 25, 100, 1000];
+
+  it('RENDERED_UNLOCKS is the default sample size', () => {
+    expect(RENDERED_UNLOCKS).toBe(24);
+    expect(recurringChartTranches(sched(1000))).toHaveLength(24);
+    expect(recurringPreview(sched(1000))).toHaveLength(24);
+  });
+
+  it.each(COUNTS)('chart tranches for count=%i: min(n, count) points, strictly increasing, last unlock kept, amounts sum to the deposit', (count) => {
+    for (const n of [RENDERED_UNLOCKS, 3, 1000]) {
+      const r = sched(count);
+      const pts = recurringChartTranches(r, n);
+      expect(pts).toHaveLength(Math.min(n, count));
+      for (let i = 1; i < pts.length; i++) expect(pts[i].ts).toBeGreaterThan(pts[i - 1].ts);
+      expect(pts[0].ts).toBeGreaterThanOrEqual(r.first_ts);
+      expect(pts[pts.length - 1].ts).toBe(r.first_ts + (count - 1) * r.period_secs);
+      expect(pts.reduce((acc, p) => acc + p.amount, 0n)).toBe(r.amount_per_period * BigInt(count));
+      // every point sits on a real unlock boundary and carries a whole number of periods
+      for (const p of pts) {
+        expect((p.ts - r.first_ts) % r.period_secs).toBe(0);
+        expect(p.amount % r.amount_per_period).toBe(0n);
+        expect(p.amount).toBeGreaterThan(0n);
+      }
+    }
+  });
+
+  it('chart tranches are exact unlocks when count fits in n', () => {
+    expect(recurringChartTranches(sched(5), 24)).toEqual([
+      { amount: 250n, ts: 1_000 },
+      { amount: 250n, ts: 1_100 },
+      { amount: 250n, ts: 1_200 },
+      { amount: 250n, ts: 1_300 },
+      { amount: 250n, ts: 1_400 },
+    ]);
+  });
+
+  it('chart tranches sample evenly and fold the skipped unlocks into the next point', () => {
+    // 100 unlocks in 4 points: indices 24, 49, 74, 99 → 25 periods each
+    expect(recurringChartTranches(sched(100), 4)).toEqual([
+      { amount: 6_250n, ts: 1_000 + 24 * 100 },
+      { amount: 6_250n, ts: 1_000 + 49 * 100 },
+      { amount: 6_250n, ts: 1_000 + 74 * 100 },
+      { amount: 6_250n, ts: 1_000 + 99 * 100 },
+    ]);
+  });
+
+  it.each(COUNTS)('preview for count=%i: the first min(n, count) unlocks, one period each', (count) => {
+    const r = sched(count);
+    const pts = recurringPreview(r);
+    expect(pts).toHaveLength(Math.min(RENDERED_UNLOCKS, count));
+    pts.forEach((p, i) => expect(p).toEqual({ amount: 250n, ts: r.first_ts + i * r.period_secs }));
+    expect(recurringPreview(r, 2)).toEqual([{ amount: 250n, ts: 1_000 }, { amount: 250n, ts: 1_100 }].slice(0, Math.min(2, count)));
+  });
+
+  it('an empty schedule renders nothing', () => {
+    expect(recurringPreview(sched(0))).toEqual([]);
+    expect(recurringChartTranches(sched(0))).toEqual([]);
+    expect(recurringChartTranches(sched(5), 0)).toEqual([]);
   });
 });
