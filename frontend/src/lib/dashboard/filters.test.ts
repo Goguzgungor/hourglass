@@ -84,11 +84,18 @@ describe('API url builders', () => {
     expect(historyApiUrl(G1, DEFAULT_FILTERS)).toBe(`/api/history?address=${G1}&limit=${HISTORY_PAGE}`);
     expect(historyApiUrl(G1, { ...DEFAULT_FILTERS, mine: true }, 'c')).toBe(`/api/history?address=${G1}&mine=1&limit=${HISTORY_PAGE}&cursor=c`);
   });
-  it('filtersKey changes with the address, the tab and any server-side filter, not with client-only kinds', () => {
+  it('filtersKey depends only on the fields the list actually requests', () => {
     const a = filtersKey(DEFAULT_FILTERS, G1);
     expect(filtersKey(DEFAULT_FILTERS, 'GOTHER')).not.toBe(a);
     expect(filtersKey({ ...DEFAULT_FILTERS, tab: 'history' }, G1)).not.toBe(a);
     expect(filtersKey({ ...DEFAULT_FILTERS, status: ['streaming'] }, G1)).not.toBe(a);
     expect(filtersKey({ ...DEFAULT_FILTERS, kinds: ['created'] }, G1)).toBe(a);
+    // history-only field does not disturb the streams list, and vice versa
+    expect(filtersKey({ ...DEFAULT_FILTERS, mine: true }, G1)).toBe(a);
+    const h = filtersKey({ ...DEFAULT_FILTERS, tab: 'history' }, G1);
+    expect(filtersKey({ ...DEFAULT_FILTERS, tab: 'history', status: ['streaming'], q: '45', sort: 'end_ts' }, G1)).toBe(h);
+    expect(filtersKey({ ...DEFAULT_FILTERS, tab: 'history', mine: true }, G1)).not.toBe(h);
+    // different invalid searches share one idle key
+    expect(filtersKey({ ...DEFAULT_FILTERS, q: 'hello' }, G1)).toBe(filtersKey({ ...DEFAULT_FILTERS, q: 'world' }, G1));
   });
 });

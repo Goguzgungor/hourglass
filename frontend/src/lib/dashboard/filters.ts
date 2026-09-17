@@ -135,8 +135,11 @@ export function historyApiUrl(address: string, f: DashboardFilters, cursor?: str
   return `/api/history?${p.toString()}`;
 }
 
-/** Identity of a paged list: address + tab + every server-side filter (client-only `kinds` excluded). */
+/**
+ * Identity of a paged list: the address plus exactly the fields that list's
+ * request depends on (so an edit to the other tab's filters never resets it).
+ */
 export function filtersKey(f: DashboardFilters, address: string): string {
-  const { kinds: _kinds, ...server } = f;
-  return `${address}|${filtersToQuery({ ...server, kinds: [] }).toString()}`;
+  if (f.tab === 'history') return `history|${historyApiUrl(address, f)}`;
+  return `streams|${streamsApiUrl(address, f) ?? 'invalid'}`;
 }
