@@ -55,7 +55,12 @@ function big(v: string | undefined): bigint | null {
 
 function otherParty(item: HistoryItem, address: string): string | null {
   const s = item.stream;
-  if (item.action === 'transferred' && item.new_owner) return item.new_owner;
+  if (item.action === 'transferred') {
+    // Old owner's view: the new owner. New owner's view: whoever transferred
+    // it (the stream doc's recipient is already the new owner by now).
+    if (item.new_owner && item.new_owner !== address) return item.new_owner;
+    if (item.actor && item.actor !== address) return item.actor;
+  }
   if (item.action === 'withdrawn' && item.to && item.to !== address) return item.to;
   if (s) {
     if (s.sender === address) return s.recipient;

@@ -32,6 +32,11 @@ describe('toHistoryRow', () => {
   });
   it('transferred: counterparty = new_owner; renounced/burned: no amount', () => {
     expect(toHistoryRow(item({ action: 'transferred', actor: OTHER, new_owner: THIRD }), ME)).toMatchObject({ kind: 'transferred', amount: null, counterparty: THIRD });
+    // old owner (the actor) looking at their own transfer → the new owner
+    expect(toHistoryRow(item({ action: 'transferred', actor: ME, new_owner: THIRD }), ME)).toMatchObject({ counterparty: THIRD, mine: true });
+    // new owner looking at the transfer they received → the old owner, never themselves
+    const received = item({ action: 'transferred', actor: OTHER, new_owner: ME, stream: { id: 7, model: 'Linear', token: 'CTOKEN', sender: THIRD, recipient: ME, deposited: '1000' } });
+    expect(toHistoryRow(received, ME)).toMatchObject({ counterparty: OTHER, mine: false });
     expect(toHistoryRow(item({ action: 'renounced', actor: ME }), ME)).toMatchObject({ kind: 'renounced', amount: null, secondary: null });
     expect(toHistoryRow(item({ action: 'burned', actor: OTHER }), ME)).toMatchObject({ kind: 'burned', amount: null, counterparty: OTHER });
   });
