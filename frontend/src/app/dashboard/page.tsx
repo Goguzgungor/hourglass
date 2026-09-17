@@ -87,6 +87,11 @@ function ConnectedView({ address }: { address: string }): ReactNode {
       setApiError((e as Error).message);
     }
   }, [address]);
+  // A new wallet gets placeholders, never the previous wallet's money.
+  useEffect(() => {
+    setStats(null);
+    setTokens([]);
+  }, [address]);
   useEffect(() => {
     void loadStats();
     const id = setInterval(() => {
@@ -100,8 +105,9 @@ function ConnectedView({ address }: { address: string }): ReactNode {
   const streamsNext = useCallback((c: string) => streamsApiUrl(address, filters, c), [address, filters]);
   const streams = usePagedList<ApiStream>({
     key: filtersKey({ ...filters, tab: 'streams' }, address),
-    firstUrl: streamsFirst, // both lists stay live across tab switches (spec §4)
+    firstUrl: streamsFirst, // both lists stay loaded across tab switches (spec §4)
     nextUrl: streamsNext,
+    refreshMs: filters.tab === 'streams' ? 10_000 : 0, // only the visible list polls
     pick: (json) => {
       const j = json as { streams?: ApiStream[]; next_cursor?: string | null };
       return { items: j.streams ?? [], cursor: j.next_cursor ?? null };
@@ -116,6 +122,7 @@ function ConnectedView({ address }: { address: string }): ReactNode {
     key: filtersKey({ ...filters, tab: 'history' }, address),
     firstUrl: historyFirst,
     nextUrl: historyNext,
+    refreshMs: filters.tab === 'history' ? 10_000 : 0,
     pick: (json) => {
       const j = json as { items?: HistoryItem[]; next_cursor?: string | null };
       return { items: (j.items ?? []).map((i) => toHistoryRow(i, address)), cursor: j.next_cursor ?? null };
