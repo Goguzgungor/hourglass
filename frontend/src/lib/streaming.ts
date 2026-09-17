@@ -100,6 +100,16 @@ export function withdrawableNow(t: StreamTerms, now: number): bigint {
   return w > 0n ? w : 0n;
 }
 
+/** Share of the deposit vested at `now`, 0..1 (4-decimal precision, bigint-scaled). */
+export function streamedFraction(t: StreamTerms, now: number): number {
+  const deposited = big(t.deposited);
+  if (deposited <= 0n) return 0;
+  const streamed = streamedAmount(t, now);
+  if (streamed <= 0n) return 0;
+  if (streamed >= deposited) return 1;
+  return Number((streamed * 10_000n) / deposited) / 10_000;
+}
+
 /** Same precedence as `Stream::status` on-chain. */
 export function deriveStatus(t: StreamTerms, now: number): StreamStatus {
   if (t.is_depleted) return 'DEPLETED';
@@ -107,4 +117,48 @@ export function deriveStatus(t: StreamTerms, now: number): StreamStatus {
   if (now < t.start_ts) return 'PENDING';
   if (now >= t.end_ts) return 'SETTLED';
   return 'STREAMING';
+}
+
+/* ----------------------------------------------------------------- *
+ * Recurring schedule rendering (stream page unlock list + chart)    *
+ * ----------------------------------------------------------------- */
+
+/** A recurring schedule as the UI holds it: bigint money, unix-second times. */
+export type RecurringSchedule = {
+  first_ts: number;
+  period_secs: number;
+  count: number;
+  amount_per_period: bigint;
+};
+
+export type UnlockPoint = { amount: bigint; ts: number };
+
+/** How many unlocks the stream page lists / charts for a recurring stream. */
+export const RENDERED_UNLOCKS = 24;
+
+/** First `n` unlocks of a recurring schedule as tranche points (for the unlock list). */
+export function recurringPreview(r: RecurringSchedule, n: number = RENDERED_UNLOCKS): UnlockPoint[] {
+  const shown = Math.min(n, r.count);
+  if (shown <= 0) return [];
+  return Array.from({ length: shown }, (_, i) => ({ amount: r.amount_per_period, ts: r.first_ts + i * r.period_secs }));
+}
+
+/**
+ * Up to `n` chart points sampled evenly across a recurring schedule (always
+ * including the last unlock). Amounts are cumulative differences, so summing
+ * them reproduces the total at each sampled point and `deposited` at the end.
+ */
+export function recurringChartTranches(r: RecurringSchedule, n: number = RENDERED_UNLOCKS): UnlockPoint[] {
+  const shown = Math.min(n, r.count);
+  if (shown <= 0) return [];
+  const out: UnlockPoint[] = [];
+  let prev = -1;
+  for (let i = 0; i < shown; i++) {
+    // last sample is always the final unlock (index count-1)
+    const k = i === shown - 1 ? r.count - 1 : Math.floor(((i + 1) * r.count) / shown) - 1;
+    const idx = Math.max(k, prev + 1);
+    out.push({ amount: r.amount_per_period * BigInt(idx - prev), ts: r.first_ts + idx * r.period_secs });
+    prev = idx;
+  }
+  return out;
 }

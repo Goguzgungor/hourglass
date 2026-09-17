@@ -60,6 +60,14 @@ src/
 - **Batch:** rows come from the table or from pasted / uploaded `recipient, amount` lines (comma, semicolon, tab or space separated; header and `#` lines skipped). Max 500 rows per run. Rows are chunked 20 per `create_batch` transaction (contract cap 100); a chunk that does not fit is split in half automatically. Each transaction is signed separately; progress is kept in `sessionStorage['hourglass:batchRun:v1']` so a reload offers to resume. A pre-flight Horizon balance check blocks runs that exceed the balance.
 - **Logic lives in** `src/lib/create/` (pure, unit-tested); UI in `src/components/create/`.
 
+## Dashboard
+
+`/dashboard` has two tabs whose state lives in the URL (`?tab=history&role=sender&status=streaming,pending&token=C…&model=Recurring&q=45&sort=start_ts&order=asc&mine=1&kinds=withdrawn`), so any view can be shared or reloaded.
+
+- **Streams**: role (all / sending / receiving), status chips, token, shape, search (stream id, `G…` account prefix or `C…` token prefix — anything else is not sent), sort field + order; 20 per page with "Load 20 more"; the first page refreshes every 10 s and new streams are announced in a banner instead of shifting the list.
+- **History**: every action on every stream the wallet participates in (`/api/history`), "Only my actions", client-side kind chips; 25 per page.
+- Stats come from `/api/stats?address=`; tokens from `/api/tokens`. Logic lives in `src/lib/dashboard/` (pure, unit-tested); UI in `src/components/dashboard/`.
+
 ## Design system
 
 The Celestial Almanac palette. Treat sand as a brass accent — use it
