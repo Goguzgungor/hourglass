@@ -14,7 +14,7 @@ import { hasRowErrors, rowsSummary, validateRows } from '@/lib/create/rows';
 import { deriveTemplate } from '@/lib/create/schedule';
 import { findTemplate } from '@/lib/create/templates';
 import { useTemplates } from '@/lib/create/useTemplates';
-import { DEFAULT_CHUNK_ROWS, planRun } from '@/lib/create/batchPlan';
+import { DEFAULT_CHUNK_ROWS, createdRowIds, planRun, runPreview } from '@/lib/create/batchPlan';
 import { useBatchRunner } from '@/lib/create/useBatchRunner';
 import { submitSingle } from '@/lib/create/submit';
 import { classifyTxError, describeError } from '@/lib/create/errors';
@@ -266,6 +266,26 @@ export default function CreateStreamPage() {
   const run = runner.run;
   const batchDisabled = validated.length === 0 || hasRowErrors(validated) || !schedule || checking;
 
+  /** "Create another": drop the rows that became streams (all of them after a completed run), then forget the run. */
+  function onResetBatch() {
+    if (run) dispatch({ type: 'remove_rows', ids: createdRowIds(run) });
+    runner.discard();
+  }
+  // While a run exists the preview describes the run itself (it survives reloads; the form does not).
+  const runToken = run ? findToken(run.token) : undefined;
+  const preview = run
+    ? { ...runPreview(run), recipient: undefined, symbol: runToken?.symbol ?? 'TOKEN', glyphColor: runToken?.glyphColor, cancelable: run.cancelable, transferable: run.transferable }
+    : {
+        schedule: parsed.schedule,
+        total: state.mode === 'single' ? singleTotal : summary.total > 0n ? summary.total : null,
+        recipients: state.mode === 'single' ? 1 : validated.length,
+        recipient: state.mode === 'single' ? state.single.recipient : undefined,
+        symbol,
+        glyphColor: selectedToken?.glyphColor,
+        cancelable: state.cancelable,
+        transferable: state.transferable,
+      };
+
   return (
     <div className="mx-auto max-w-[1280px] xl:max-w-[1640px] 2xl:max-w-[1920px] px-4 sm:px-6 md:px-10 xl:px-16 2xl:px-24 pt-10 sm:pt-16 md:pt-24 xl:pt-28">
       <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_480px] 2xl:grid-cols-[1fr_560px] gap-x-8 lg:gap-x-10 xl:gap-x-16 2xl:gap-x-20 gap-y-10 items-start">
@@ -291,7 +311,7 @@ export default function CreateStreamPage() {
 
           {run ? (
             run.phase === 'completed' || run.phase === 'aborted' ? (
-              <CreateResult run={run} busy={runner.busy} onReset={runner.discard} />
+              <CreateResult run={run} busy={runner.busy} onReset={onResetBatch} />
             ) : (
               <>
                 {error && <p className="mt-10 font-mono text-xs text-danger border-l-2 border-danger pl-4 py-2">{error}</p>}
@@ -400,16 +420,7 @@ export default function CreateStreamPage() {
 
         <aside className="hidden md:block md:sticky md:top-32">
           <p className="eyebrow text-cream-dim mb-4">· Preview</p>
-          <CreatePreview
-            schedule={parsed.schedule}
-            total={state.mode === 'single' ? singleTotal : summary.total > 0n ? summary.total : null}
-            recipients={state.mode === 'single' ? 1 : validated.length}
-            recipient={state.mode === 'single' ? state.single.recipient : undefined}
-            symbol={symbol}
-            glyphColor={selectedToken?.glyphColor}
-            cancelable={state.cancelable}
-            transferable={state.transferable}
-          />
+          <CreatePreview {...preview} />
           <p className="mt-5 text-[11px] text-cream-dim/80 leading-relaxed">
             Curve sketch + spec sheet update live as you edit. Recipients will see exactly this schedule on-chain.
           </p>

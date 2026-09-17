@@ -4,6 +4,7 @@ import Wordmark from '@/components/Wordmark';
 import WalletButton from '@/components/WalletButton';
 import MobileNav from '@/components/MobileNav';
 import Providers from '@/components/Providers';
+import { APP_STAGE, APP_VERSION } from '@/lib/version';
 import './globals.css';
 
 // Body / UI face
@@ -119,7 +120,7 @@ export default function RootLayout({
                 <span>
                   Hourglass <span className="text-stroke-2">·</span> Token
                   streaming on Stellar{' '}
-                  <span className="text-stroke-2">·</span> v0.1.0-mvp
+                  <span className="text-stroke-2">·</span> {APP_VERSION} · {APP_STAGE}
                 </span>
                 <span className="font-mono normal-case tracking-normal text-cream-dim/70">
                   Apache-2.0

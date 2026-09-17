@@ -17,7 +17,7 @@ function item(over: Partial<HistoryItem>): HistoryItem {
 describe('toHistoryRow', () => {
   it('created: amount = deposited, counterparty = the other party, mine when I am the actor', () => {
     const r = toHistoryRow(item({ actor: ME }), ME);
-    expect(r).toEqual({ id: `${'ab'.repeat(32)}:3`, kind: 'created', ts: 1_800_000_000, streamId: 7, model: 'Linear', token: 'CTOKEN', amount: 1000n, secondary: null, counterparty: OTHER, actor: ME, mine: true, txHash: 'ab'.repeat(32) });
+    expect(r).toEqual({ id: `${'ab'.repeat(32)}:3`, kind: 'created', ts: 1_800_000_000, streamId: 7, model: 'Linear', token: 'CTOKEN', amount: 1000n, secondary: null, counterparty: OTHER, self: false, actor: ME, mine: true, txHash: 'ab'.repeat(32) });
     expect(toHistoryRow(item({ actor: ME }), OTHER).counterparty).toBe(ME);
     expect(toHistoryRow(item({ actor: ME }), OTHER).mine).toBe(false);
   });
@@ -57,5 +57,13 @@ describe('filterHistoryRows / tables', () => {
       expect(KIND_COLOR[k]).toMatch(/^bg-/);
       expect(KIND_LABEL[k].length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('self streams', () => {
+  it('a stream I sent to myself has no counterparty and is flagged self', () => {
+    const r = toHistoryRow(item({ actor: ME, participants: [ME], stream: { id: 7, model: 'Tranched', token: 'CTOKEN', sender: ME, recipient: ME, deposited: '5' } }), ME);
+    expect(r).toMatchObject({ counterparty: null, self: true, mine: true, amount: 5n });
+    expect(toHistoryRow(item({ actor: ME }), ME).self).toBe(false);
   });
 });

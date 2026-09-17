@@ -64,6 +64,8 @@ export type FormAction =
   | { type: 'add_row' }
   | { type: 'update_row'; id: string; patch: Partial<Pick<RowInput, 'recipient' | 'amount'>> }
   | { type: 'remove_row'; id: string }
+  /** Drop several rows at once (e.g. the rows a finished batch already created). Unknown ids are ignored. */
+  | { type: 'remove_rows'; ids: string[] }
   | { type: 'clear_rows' }
   | { type: 'import_rows'; text: string }
   | { type: 'template_saved'; templateId: string }
@@ -259,6 +261,12 @@ export function formReducer(s: FormState, a: FormAction): FormState {
       return { ...s, batch: { ...s.batch, rows: s.batch.rows.map((r) => (r.id === a.id ? { ...r, ...a.patch } : r)) } };
     case 'remove_row':
       return { ...s, batch: { ...s.batch, rows: s.batch.rows.filter((r) => r.id !== a.id) } };
+    case 'remove_rows': {
+      if (a.ids.length === 0) return s;
+      const drop = new Set(a.ids);
+      const rows = s.batch.rows.filter((r) => !drop.has(r.id));
+      return rows.length === s.batch.rows.length ? s : { ...s, batch: { ...s.batch, rows } };
+    }
     case 'clear_rows':
       return { ...s, batch: { rows: [], nextId: s.batch.nextId } };
     case 'import_rows': {

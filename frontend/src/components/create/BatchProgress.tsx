@@ -31,7 +31,7 @@ function stepText(run: BatchRun, unresolved: boolean): string {
   const p = runProgress(run);
   const active = run.chunks.find((c) => c.status === 'simulating' || c.status === 'signing' || c.status === 'submitting');
   if (run.phase === 'running' && active) {
-    return `Transaction ${active.index + 1} of ${p.total} — ${active.rowIds.length} streams — ${STATUS_LABEL[active.status]}`;
+    return `Transaction ${active.index + 1} of ${p.total} — ${plural(active.rowIds.length, 'stream')} — ${STATUS_LABEL[active.status]}`;
   }
   if (run.phase === 'paused') {
     if (unresolved) return 'A transaction was signed but its result is not known yet. Check it before continuing.';
@@ -46,8 +46,10 @@ function stepText(run: BatchRun, unresolved: boolean): string {
         return 'A transaction failed. Retry or stop.';
     }
   }
-  return `${p.done} of ${p.total} transactions done — ${p.streams} streams created.`;
+  return `${p.done} of ${p.total} ${p.total === 1 ? 'transaction' : 'transactions'} done — ${plural(p.streams, 'stream')} created.`;
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export default function BatchProgress({ run, busy, persisted, onPause, onContinue, onShift, onForgetTx, onAbort }: Props) {
   const p = runProgress(run);
@@ -60,7 +62,7 @@ export default function BatchProgress({ run, busy, persisted, onPause, onContinu
   return (
     <section className="mt-10 space-y-8" aria-label="Batch progress">
       <div>
-        <p className="eyebrow text-cream-dim mb-2">· Creating {Object.keys(run.rows).length} streams</p>
+        <p className="eyebrow text-cream-dim mb-2">· Creating {plural(Object.keys(run.rows).length, 'stream')}</p>
         <p className="font-mono text-sm text-cream" aria-live="polite">
           {stepText(run, unresolved)}
         </p>
@@ -74,7 +76,7 @@ export default function BatchProgress({ run, busy, persisted, onPause, onContinu
           return (
             <li key={c.index} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
               <span className="text-cream-dim w-8">#{c.index + 1}</span>
-              <span className="text-cream w-28">{c.rowIds.length} streams</span>
+              <span className="text-cream w-28">{plural(c.rowIds.length, 'stream')}</span>
               <span
                 className={
                   'w-40 ' +
@@ -85,7 +87,7 @@ export default function BatchProgress({ run, busy, persisted, onPause, onContinu
               </span>
               {c.streamIds && c.streamIds.length > 0 && (
                 <span className="text-cream-dim">
-                  ids {c.streamIds[0]}–{c.streamIds[c.streamIds.length - 1]}
+                  {c.streamIds.length === 1 ? `id ${c.streamIds[0]}` : `ids ${c.streamIds[0]}–${c.streamIds[c.streamIds.length - 1]}`}
                 </span>
               )}
               {c.txHash &&

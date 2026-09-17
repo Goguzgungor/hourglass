@@ -41,8 +41,8 @@ Run on 2026-09-17 against production (https://hourglassprotocol.org, main at `dd
 ### Notes from the run
 
 - The Freighter reject path of scenario 5 was **not** exercised: the maintainer approved every prompt. Resume was exercised through **Pause after this transaction → reload → Resume → Continue**, which covers the persisted-run / banner / continue path but not the `chunk_failed` (user-rejected) branch. Worth a second pass with an explicit reject.
-- After a finished batch, **Create another** keeps the previous rows in the table (rows are not cleared). Convenient for re-runs but a footgun: a second click on Create re-creates the same streams. Consider clearing rows (or at least the result) on "Create another".
-- After **Resume**, the right-hand preview panel says "Fill the form to render the schedule" (only the run is restored, not the form). Cosmetic.
+- After a finished batch, **Create another** kept the previous rows in the table — a second click on Create would re-create the same streams. **Fixed** on `fix/walkthrough-findings`: "Create another" now removes the rows that became streams (all of them after a completed run; a stopped run keeps its uncreated rows).
+- After **Resume**, the right-hand preview panel said "Fill the form to render the schedule" (only the run is restored, not the form). **Fixed**: while a run exists the preview is derived from the run itself (rows, token, next chunk's schedule, flags).
 - Single-recipient defaults start at now + 25 min; recurring templates put the first unlock at now + 15 min. Both landed fine.
-- The footer still reads `V0.1.0-MVP`.
+- The footer still read `V0.1.0-MVP`. **Fixed**: `v0.2.1 · testnet beta`, sourced from `frontend/package.json` via `src/lib/version.ts`.
 

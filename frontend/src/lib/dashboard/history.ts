@@ -19,8 +19,10 @@ export type HistoryRow = {
   amount: bigint | null;
   /** canceled: what stayed withdrawable for the recipient */
   secondary: bigint | null;
-  /** The other party relative to `address`. */
+  /** The other party relative to `address`; null for a stream sent to myself. */
   counterparty: string | null;
+  /** Sender and recipient are both `address`. */
+  self: boolean;
   actor: string | null;
   mine: boolean;
   txHash: string;
@@ -63,6 +65,7 @@ function otherParty(item: HistoryItem, address: string): string | null {
   }
   if (item.action === 'withdrawn' && item.to && item.to !== address) return item.to;
   if (s) {
+    if (s.sender === address && s.recipient === address) return null;
     if (s.sender === address) return s.recipient;
     if (s.recipient === address) return s.sender;
     return s.recipient;
@@ -99,6 +102,7 @@ export function toHistoryRow(item: HistoryItem, address: string): HistoryRow {
     amount,
     secondary,
     counterparty: otherParty(item, address),
+    self: !!item.stream && item.stream.sender === address && item.stream.recipient === address,
     actor: item.actor ?? null,
     mine: item.actor === address,
     txHash: item.tx_hash,

@@ -15,8 +15,8 @@ export default function CreateResult({ run, busy, onReset }: { run: BatchRun; bu
       <div>
         <p className={`eyebrow mb-2 ${aborted ? 'text-warning' : 'text-success'}`}>· {aborted ? 'Stopped' : 'Done'}</p>
         <p className="font-mono text-sm text-cream">
-          {p.streams} streams created in {p.done} transaction{p.done === 1 ? '' : 's'}.
-          {aborted && remaining > 0 && ` ${remaining} rows were not created.`}
+          {p.streams} stream{p.streams === 1 ? '' : 's'} created in {p.done} transaction{p.done === 1 ? '' : 's'}.
+          {aborted && remaining > 0 && ` ${remaining} row${remaining === 1 ? ' was' : 's were'} not created.`}
         </p>
       </div>
       <ol className="border border-stroke divide-y divide-stroke/60 font-mono text-xs">
