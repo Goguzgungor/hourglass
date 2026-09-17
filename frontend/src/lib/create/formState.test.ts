@@ -214,3 +214,18 @@ describe('datetime helpers round-trip', () => {
 
 // keep TS happy about unused type import in some editors
 export type _T = FormState;
+
+describe('remove_rows', () => {
+  it('drops exactly the listed rows, keeps nextId, ignores unknown ids', () => {
+    let s = initialFormState(NOW, tokens);
+    s = formReducer(s, { type: 'set_mode', mode: 'batch' });
+    s = formReducer(s, { type: 'import_rows', text: `${G1},1\n${G1},2\n${G1},3` });
+    const ids = s.batch.rows.map((r) => r.id);
+    expect(ids).toHaveLength(3);
+    const next = s.batch.nextId;
+    s = formReducer(s, { type: 'remove_rows', ids: [ids[0], ids[2], 'nope'] });
+    expect(s.batch.rows.map((r) => r.id)).toEqual([ids[1]]);
+    expect(s.batch.nextId).toBe(next);
+    expect(formReducer(s, { type: 'remove_rows', ids: [] })).toBe(s);
+  });
+});

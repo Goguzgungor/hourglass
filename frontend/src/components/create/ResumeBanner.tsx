@@ -16,8 +16,8 @@ export default function ResumeBanner({ run, onResume, onDiscard }: { run: BatchR
       <p className="eyebrow text-warning">· Unfinished batch</p>
       <p className="text-sm text-cream-muted leading-relaxed">
         {run.phase === 'completed'
-          ? `A batch from ${when} (${who}) finished — ${p.streams} streams.`
-          : `A batch from ${when} (${who}) is unfinished — ${left} of ${p.total} transaction${p.total === 1 ? '' : 's'} left (${p.streams} streams created so far).`}
+          ? `A batch from ${when} (${who}) finished — ${p.streams} stream${p.streams === 1 ? '' : 's'}.`
+          : `A batch from ${when} (${who}) is unfinished — ${left} of ${p.total} transaction${p.total === 1 ? '' : 's'} left (${p.streams} stream${p.streams === 1 ? '' : 's'} created so far).`}
       </p>
       <div className="flex flex-wrap gap-4">
         <button type="button" className={secondaryButtonClass} onClick={onResume}>

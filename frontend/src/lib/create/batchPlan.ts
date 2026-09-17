@@ -106,6 +106,26 @@ export function planRun(input: {
   };
 }
 
+/** Row ids that already became streams (chunks with status `done`), in chunk order. */
+export function createdRowIds(run: BatchRun): string[] {
+  return run.chunks.filter((c) => c.status === 'done').flatMap((c) => c.rowIds);
+}
+
+/**
+ * What the preview panel should show while a run exists: every row's deposit,
+ * the recipient count, and the schedule of the next chunk still to be created
+ * (shifts apply to remaining chunks only) — or the last chunk's once all are done.
+ */
+export function runPreview(run: BatchRun): { schedule: Schedule; total: bigint; recipients: number } {
+  const rows = Object.values(run.rows);
+  const next = run.chunks.find((c) => c.status !== 'done') ?? run.chunks[run.chunks.length - 1];
+  return {
+    schedule: next.schedule,
+    total: rows.reduce((acc, r) => acc + BigInt(r.total), 0n),
+    recipients: rows.length,
+  };
+}
+
 function updateChunk(run: BatchRun, index: number, patch: (c: Chunk) => Chunk): Chunk[] {
   return run.chunks.map((c) => (c.index === index ? patch(c) : c));
 }

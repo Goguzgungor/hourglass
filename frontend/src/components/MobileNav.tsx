@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { APP_STAGE, APP_VERSION } from '@/lib/version';
 
 const LINKS: { href: string; label: string; external?: boolean }[] = [
   { href: '/create', label: 'Create' },
@@ -100,7 +101,7 @@ export default function MobileNav() {
             className="pb-10 text-center text-[10px] uppercase tracking-[0.22em] text-cream-dim"
             onClick={(e) => e.stopPropagation()}
           >
-            Hourglass <span className="text-stroke-2">·</span> v0.1.0-mvp
+            Hourglass <span className="text-stroke-2">·</span> {APP_VERSION} · {APP_STAGE}
           </p>
         </div>
       )}

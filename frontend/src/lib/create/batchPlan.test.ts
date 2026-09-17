@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   BATCH_RUN_KEY,
+  createdRowIds,
+  runPreview,
   DEFAULT_CHUNK_ROWS,
   INTERRUPTED_ERROR,
   loadStoredRun,
@@ -202,5 +204,27 @@ describe('loadStoredRun', () => {
     const done = runReducer(run(1), { type: 'chunk_done', index: 0, txHash: 'h', streamIds: [1] });
     s.setItem(BATCH_RUN_KEY, JSON.stringify(done));
     expect(loadStoredRun(s)?.phase).toBe('completed');
+  });
+});
+
+describe('createdRowIds / runPreview', () => {
+  it('createdRowIds lists the rows of done chunks only, in chunk order', () => {
+    let r = run(45);
+    expect(createdRowIds(r)).toEqual([]);
+    r = runReducer(r, { type: 'chunk_done', index: 1, txHash: 'bb', streamIds: [21] });
+    r = runReducer(r, { type: 'chunk_done', index: 0, txHash: 'aa', streamIds: [1] });
+    expect(createdRowIds(r)).toEqual([...r.chunks[0].rowIds, ...r.chunks[1].rowIds]);
+    expect(createdRowIds(r)).toHaveLength(40);
+  });
+  it('runPreview sums every row, counts recipients and uses the next pending chunk schedule', () => {
+    let r = run(25);
+    expect(runPreview(r)).toEqual({ schedule, total: 25n * 120_000_000n, recipients: 25 });
+    r = runReducer(r, { type: 'chunk_done', index: 0, txHash: 'aa', streamIds: [1] });
+    r = runReducer(r, { type: 'shift_remaining', seconds: 600 });
+    expect(runPreview(r).schedule).toEqual(r.chunks[1].schedule);
+    expect(runPreview(r).schedule).not.toEqual(schedule);
+    r = runReducer(r, { type: 'chunk_done', index: 1, txHash: 'bb', streamIds: [2] });
+    // Everything done: fall back to the last chunk's schedule.
+    expect(runPreview(r).schedule).toEqual(r.chunks[1].schedule);
   });
 });
