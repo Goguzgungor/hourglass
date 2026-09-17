@@ -13,6 +13,7 @@ type DeploymentJson = {
   network: string;
   rpc_url: string;
   network_passphrase: string;
+  horizon_url?: string;
   comptroller: string;
   lockup: string;
   native_token: string;
@@ -29,6 +30,7 @@ export const DEPLOYMENT = {
   network: d.network,
   rpcUrl: d.rpc_url,
   networkPassphrase: d.network_passphrase,
+  horizonUrl: d.horizon_url ?? '',
   comptroller: d.comptroller,
   lockup: d.lockup,
   nativeToken: d.native_token,
