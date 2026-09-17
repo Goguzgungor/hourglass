@@ -7,6 +7,13 @@ export default function SearchBox({ value, onChange }: { value: string; onChange
   // Last value this box pushed upstream; a `value` equal to it is our own echo,
   // not an external change (Clear filters, shared URL), so local typing survives.
   const lastSent = useRef(value);
+  // Latest `onChange` without making it a debounce dependency: the parent
+  // passes a fresh closure on every render (and re-renders on its 1 s clock),
+  // which would restart the 300 ms timer on each tick.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     if (value !== lastSent.current) {
@@ -20,10 +27,10 @@ export default function SearchBox({ value, onChange }: { value: string; onChange
     if (next === lastSent.current) return;
     const id = setTimeout(() => {
       lastSent.current = next;
-      onChange(next);
+      onChangeRef.current(next);
     }, 300);
     return () => clearTimeout(id);
-  }, [text, onChange]);
+  }, [text]);
 
   const kind = searchKind(text);
   return (
