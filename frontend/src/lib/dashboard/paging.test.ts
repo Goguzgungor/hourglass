@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyPaged, mergeFirstPage, pagedReducer, type Paged } from './paging';
+import { emptyPaged, mergeFirstPage, pagedReducer, shouldRetryFirstPage, type Paged } from './paging';
 
 type Row = { id: number; v: string };
 const idOf = (r: Row) => r.id;
@@ -27,6 +27,13 @@ describe('pagedReducer', () => {
     expect(s).toMatchObject({ loading: false, error: 'boom' });
     expect(pagedReducer(s, { type: 'fail', key: 'zzz', error: 'x' })).toBe(s);
   });
+  it('a page after a failed first page clears the error and marks the list loaded', () => {
+    let s: Paged<Row> = pagedReducer(emptyPaged('k1'), { type: 'reset', key: 'k1' });
+    s = pagedReducer(s, { type: 'fail', key: 'k1', error: 'ECONNREFUSED' });
+    expect(s).toMatchObject({ error: 'ECONNREFUSED', loadedOnce: false, loading: false });
+    s = pagedReducer(s, { type: 'page', key: 'k1', items: rows(1, 2), cursor: 'c1' });
+    expect(s).toMatchObject({ items: rows(1, 2), cursor: 'c1', error: null, loadedOnce: true, loading: false });
+  });
   it('refresh updates loaded rows in place, holds new rows until absorb_new', () => {
     let s: Paged<Row> = pagedReducer(emptyPaged('k1'), { type: 'reset', key: 'k1' });
     s = pagedReducer(s, { type: 'page', key: 'k1', items: rows(5, 4, 3), cursor: 'c' });
@@ -51,6 +58,21 @@ describe('pagedReducer', () => {
   it('refresh with a stale key is ignored', () => {
     const s: Paged<Row> = pagedReducer(emptyPaged('k1'), { type: 'reset', key: 'k1' });
     expect(pagedReducer(s, { type: 'refresh', key: 'k2', items: rows(1), cursor: null, idOf })).toBe(s);
+  });
+});
+
+describe('shouldRetryFirstPage', () => {
+  it('is true only for a failed, idle, never-loaded list', () => {
+    let s: Paged<Row> = pagedReducer(emptyPaged('k1'), { type: 'reset', key: 'k1' });
+    expect(shouldRetryFirstPage(s)).toBe(false); // first page in flight
+    s = pagedReducer(s, { type: 'fail', key: 'k1', error: 'boom' });
+    expect(shouldRetryFirstPage(s)).toBe(true);
+    s = pagedReducer(s, { type: 'page', key: 'k1', items: rows(1), cursor: 'c' });
+    expect(shouldRetryFirstPage(s)).toBe(false); // recovered
+    s = pagedReducer(s, { type: 'load_more' });
+    s = pagedReducer(s, { type: 'fail', key: 'k1', error: 'later' });
+    expect(shouldRetryFirstPage(s)).toBe(false); // loaded once: refresh path, not a retry
+    expect(shouldRetryFirstPage(emptyPaged<Row>('k1'))).toBe(false); // idle, no error
   });
 });
 

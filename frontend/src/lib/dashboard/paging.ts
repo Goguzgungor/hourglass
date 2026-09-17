@@ -28,6 +28,16 @@ export function emptyPaged<T>(key: string): Paged<T> {
   return { key, items: [], pending: [], cursor: null, loading: false, error: null, exhausted: false, newCount: 0, loadedOnce: false };
 }
 
+/**
+ * A list whose first page failed has nothing to merge a refresh into; the
+ * next refresh tick should re-request the first page instead (and dispatch
+ * `page` / `fail`, not `refresh`). False once anything loaded or while a
+ * request is in flight.
+ */
+export function shouldRetryFirstPage<T>(s: Paged<T>): boolean {
+  return !s.loadedOnce && !!s.error && !s.loading;
+}
+
 /** Update rows already in `existing` from `fresh`; return rows of `fresh` not yet present, in their order. */
 export function mergeFirstPage<T>(existing: T[], freshPage: T[], idOf: (t: T) => string | number): { items: T[]; fresh: T[] } {
   const byId = new Map<string | number, T>();

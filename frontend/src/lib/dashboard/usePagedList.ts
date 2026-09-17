@@ -2,7 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef } from 'react';
-import { emptyPaged, pagedReducer, type Paged, type PagedAction } from './paging';
+import { emptyPaged, pagedReducer, shouldRetryFirstPage, type Paged, type PagedAction } from './paging';
 
 type Opts<T> = {
   /** Identity of the list; changing it resets and refetches. */
@@ -35,6 +35,8 @@ export function usePagedList<T>(opts: Opts<T>) {
   pickRef.current = pick;
   const idRef = useRef(idOf);
   idRef.current = idOf;
+  // A first-page retry in flight (see refresh); never overlap two of them.
+  const retryingRef = useRef(false);
 
   // Reset + first page whenever the identity or the first URL changes.
   useEffect(() => {
@@ -65,7 +67,23 @@ export function usePagedList<T>(opts: Opts<T>) {
 
   const refresh = useCallback(() => {
     const s = stateRef.current;
-    if (!firstUrl || !s.loadedOnce || s.loading) return;
+    if (!firstUrl || s.loading) return;
+    if (shouldRetryFirstPage(s)) {
+      // The first page never arrived (indexer down at mount): retry it as a
+      // plain page load so the list recovers once the API is back. The state
+      // is left as is meanwhile (no skeleton flash); the reducer drops a
+      // result whose key is stale.
+      if (retryingRef.current) return;
+      retryingRef.current = true;
+      fetchPage<T>(firstUrl, pickRef.current)
+        .then((p) => dispatch({ type: 'page', key, items: p.items, cursor: p.cursor }))
+        .catch((e: Error) => dispatch({ type: 'fail', key, error: e.message }))
+        .finally(() => {
+          retryingRef.current = false;
+        });
+      return;
+    }
+    if (!s.loadedOnce) return;
     fetchPage<T>(firstUrl, pickRef.current)
       .then((p) => dispatch({ type: 'refresh', key, items: p.items, cursor: p.cursor, idOf: idRef.current }))
       .catch(() => {
