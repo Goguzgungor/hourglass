@@ -10,3 +10,4 @@
 | 6 | Create a stream in another tab, wait ≤ 10 s | "1 new stream — show" banner; click → row at top | |
 | 7 | History tab, Only my actions off/on, kinds = Withdrawn | rows with tx links; filters apply | |
 | 8 | Open a recurring stream with count ≥ 100 | detail page renders instantly; "and N more unlocks" caption | |
+| 9 | Indexer restart: stop the indexer, reload, start it again | "Indexer offline?" panel while it is down; list recovers within 10 s of the restart, panel clears | |
