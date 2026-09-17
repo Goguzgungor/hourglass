@@ -7,10 +7,12 @@
 // app can use them with full type safety.
 
 import { lockup as lockupSdk } from 'hourglass';
-import type { Stream, StreamStatus } from 'hourglass/lockup';
-import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import type { CreateRow, Stream, StreamStatus } from 'hourglass/lockup';
+import type { AssembledTransaction, Spec } from '@stellar/stellar-sdk/contract';
 import { DEPLOYMENT } from './deployments';
 import { signTransaction } from './wallet';
+
+export type { CreateRow, CreateSpec, LinearParams, TranchedParams, RecurringParams, Tranche } from 'hourglass/lockup';
 
 /* ------------------------------------------------------------------ *
  * Typed surface of the Lockup contract — narrow to what we actually  *
@@ -18,6 +20,8 @@ import { signTransaction } from './wallet';
  * ------------------------------------------------------------------ */
 
 export interface LockupClient {
+  /** The contract spec (decodes on-chain return values, e.g. a looked-up create_batch). */
+  readonly spec: Spec;
   // ---- views ----
   get_stream(args: { stream_id: number }): Promise<AssembledTransaction<Stream>>;
   status(args: { stream_id: number }): Promise<AssembledTransaction<StreamStatus>>;
@@ -42,6 +46,30 @@ export interface LockupClient {
     is_cancelable: boolean;
     is_transferable: boolean;
   }): Promise<AssembledTransaction<number>>;
+  create_tranched(args: {
+    sender: string;
+    recipient: string;
+    token: string;
+    tranches: Array<{ amount: bigint; ts: bigint }>;
+    is_cancelable: boolean;
+    is_transferable: boolean;
+  }): Promise<AssembledTransaction<number>>;
+  create_recurring(args: {
+    sender: string;
+    recipient: string;
+    token: string;
+    amount_per_period: bigint;
+    period_secs: bigint;
+    count: number;
+    first_ts: bigint;
+    is_cancelable: boolean;
+    is_transferable: boolean;
+  }): Promise<AssembledTransaction<number>>;
+  create_batch(args: {
+    sender: string;
+    token: string;
+    rows: CreateRow[];
+  }): Promise<AssembledTransaction<number[]>>;
   withdraw_max(args: {
     stream_id: number;
     to: string;

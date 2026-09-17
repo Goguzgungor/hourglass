@@ -25,6 +25,7 @@ import type { Stream, StreamStatus } from 'hourglass/lockup';
 import type { StreamShape as ViewShape } from '@/components/LiveCounter';
 
 import CelestialDial from '@/components/CelestialDial';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import EmissionChart from '@/components/EmissionChart';
 import TabBar from '@/components/TabBar';
 import DialActionGrid from '@/components/DialActionGrid';
@@ -1314,7 +1315,7 @@ function LoadedStream({
 
       {/* Modals */}
       {renounceModal && (
-        <Modal onDismiss={() => setRenounceModal(false)}>
+        <ConfirmDialog open onDismiss={() => setRenounceModal(false)}>
           <p className="eyebrow text-warning mb-3">· Confirm</p>
           <h3 className="headline-roman text-2xl text-cream mb-4">
             Renounce cancelability?
@@ -1339,11 +1340,11 @@ function LoadedStream({
               Renounce →
             </button>
           </div>
-        </Modal>
+        </ConfirmDialog>
       )}
 
       {transferModal && (
-        <Modal onDismiss={() => setTransferModal(false)}>
+        <ConfirmDialog open onDismiss={() => setTransferModal(false)}>
           <p className="eyebrow text-cream-dim mb-3">· Transfer</p>
           <h3 className="headline-roman text-2xl text-cream mb-4">
             Transfer this stream
@@ -1377,7 +1378,7 @@ function LoadedStream({
               Transfer →
             </button>
           </div>
-        </Modal>
+        </ConfirmDialog>
       )}
     </div>
   );
@@ -1453,28 +1454,6 @@ function CopyableAddress({ addr }: { addr: string }) {
         {copied ? 'copied' : 'copy'}
       </span>
     </button>
-  );
-}
-
-function Modal({
-  children,
-  onDismiss,
-}: {
-  children: React.ReactNode;
-  onDismiss: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-night/80 backdrop-blur-sm"
-      onClick={onDismiss}
-    >
-      <div
-        className="max-w-[440px] w-full mx-6 bg-midnight border border-stroke p-8 rounded-sm"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
   );
 }
 
