@@ -51,6 +51,14 @@ src/
     WalletButton.tsx    # stub button for Stage 1; wires in Stage 2
 ```
 
+## Dashboard
+
+`/dashboard` has two tabs whose state lives in the URL (`?tab=history&role=sender&status=streaming,pending&token=C…&model=Recurring&q=45&sort=start_ts&order=asc&mine=1&kinds=withdrawn`), so any view can be shared or reloaded.
+
+- **Streams**: role (all / sending / receiving), status chips, token, shape, search (stream id, `G…` account prefix or `C…` token prefix — anything else is not sent), sort field + order; 20 per page with "Load 20 more"; the first page refreshes every 10 s and new streams are announced in a banner instead of shifting the list.
+- **History**: every action on every stream the wallet participates in (`/api/history`), "Only my actions", client-side kind chips; 25 per page.
+- Stats come from `/api/stats?address=`; tokens from `/api/tokens`. Logic lives in `src/lib/dashboard/` (pure, unit-tested); UI in `src/components/dashboard/`.
+
 ## Design system
 
 The Celestial Almanac palette. Treat sand as a brass accent — use it
