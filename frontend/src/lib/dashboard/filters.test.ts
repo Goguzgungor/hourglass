@@ -66,8 +66,14 @@ describe('searchKind', () => {
     expect(searchKind(G1)).toBe('account');
     expect(searchKind('CDLZ')).toBe('contract');
     expect(searchKind('hello')).toBe('invalid');
-    expect(searchKind('g1')).toBe('invalid');
+    expect(searchKind('g1')).toBe('invalid'); // '1' is not a base32 char, whatever the case
     expect(searchKind('4x')).toBe('invalid');
+  });
+  it('is case-insensitive: lower-case prefixes classify like their upper-case form', () => {
+    expect(searchKind('gabc')).toBe('account');
+    expect(searchKind('g')).toBe('account');
+    expect(searchKind('cdlz')).toBe('contract');
+    expect(searchKind(G1.toLowerCase())).toBe('account');
   });
 });
 
@@ -79,6 +85,10 @@ describe('API url builders', () => {
   });
   it('streamsApiUrl returns null for an invalid search', () => {
     expect(streamsApiUrl(G1, { ...DEFAULT_FILTERS, q: 'hello' })).toBeNull();
+  });
+  it('streamsApiUrl sends the search trimmed and upper-cased (ids unaffected)', () => {
+    expect(streamsApiUrl(G1, { ...DEFAULT_FILTERS, q: ' gabc ' })).toBe(`/api/streams?address=${G1}&q=GABC&limit=${STREAMS_PAGE}`);
+    expect(streamsApiUrl(G1, { ...DEFAULT_FILTERS, q: '45' })).toBe(`/api/streams?address=${G1}&q=45&limit=${STREAMS_PAGE}`);
   });
   it('historyApiUrl uses address, mine and the history page size', () => {
     expect(historyApiUrl(G1, DEFAULT_FILTERS)).toBe(`/api/history?address=${G1}&limit=${HISTORY_PAGE}`);

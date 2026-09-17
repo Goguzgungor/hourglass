@@ -99,8 +99,13 @@ export function isDefault(f: DashboardFilters, keys?: (keyof DashboardFilters)[]
 
 export type SearchKind = 'id' | 'account' | 'contract' | 'invalid' | 'empty';
 
+/** Search text as the API wants it: trimmed and upper-cased (ids unaffected). */
+export function normalizeSearch(q: string): string {
+  return q.trim().toUpperCase();
+}
+
 export function searchKind(q: string): SearchKind {
-  const t = q.trim();
+  const t = normalizeSearch(q);
   if (!t) return 'empty';
   if (/^\d+$/.test(t)) return 'id';
   if (/^G[A-Z2-7]*$/.test(t)) return 'account';
@@ -118,7 +123,7 @@ export function streamsApiUrl(address: string, f: DashboardFilters, cursor?: str
   if (f.status.length) p.set('status', f.status.join(','));
   if (f.token) p.set('token', f.token);
   if (f.model) p.set('model', f.model);
-  if (kind !== 'empty') p.set('q', f.q.trim());
+  if (kind !== 'empty') p.set('q', normalizeSearch(f.q));
   if (f.sort !== DEFAULT_FILTERS.sort) p.set('sort', f.sort);
   if (f.order !== DEFAULT_FILTERS.order) p.set('order', f.order);
   p.set('limit', String(STREAMS_PAGE));
